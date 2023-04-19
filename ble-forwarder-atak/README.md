@@ -1,0 +1,30 @@
+BLE Forwarder ATAK Plugin
+_________________________________________________________________
+PURPOSE AND CAPABILITIES
+
+A plugin to forward ATAK data over BLE
+_________________________________________________________________
+STATUS
+
+In progress.
+_________________________________________________________________
+POINT OF CONTACTS
+
+Raytheon BBN: Nate Soule, Edward Lu
+
+_________________________________________________________________
+PORTS REQUIRED
+
+(This is important for ATO, networking, and other security concerns)
+
+_________________________________________________________________
+EQUIPMENT REQUIRED
+
+_________________________________________________________________
+EQUIPMENT SUPPORTED
+
+_________________________________________________________________
+COMPILATION
+
+_________________________________________________________________
+DEVELOPER NOTES
