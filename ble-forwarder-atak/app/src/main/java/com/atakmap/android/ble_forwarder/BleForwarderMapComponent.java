@@ -46,9 +46,11 @@ import java.text.ParseException;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Queue;
 import java.util.Set;
 import java.util.Timer;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 
 public class BleForwarderMapComponent extends DropDownMapComponent {
 
@@ -63,9 +65,9 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
     private ServerSocket serverSocket;
 
     public static final int SERVERPORT1 = 8089;
-    public static final int SERVERPORT2 = 8088;
 
     Thread serverThread = null;
+    Thread cotdequeuerThread = null;
 
     byte[] delimiter = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
 
@@ -78,6 +80,7 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
     private BluetoothLeAdvertiser mBluetoothLeAdvertiser;
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
+    public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
 
     public static String lastCot = "";
 
@@ -109,13 +112,6 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
             startServer();
         }
 
-        // Register for system clock events
-        DocumentedIntentFilter timeFilter = new DocumentedIntentFilter();
-        timeFilter.addAction(Intent.ACTION_TIME_TICK);
-        timeFilter.addAction(Intent.ACTION_TIME_CHANGED);
-        timeFilter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
-        registerReceiver(context, mTimeReceiver, timeFilter);
-
         Log.d(TAG, "Finished bluetooth related setup.");
 
         // NOTE: R.style.ATAKPluginTheme does not support TabLayout, so
@@ -133,9 +129,23 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
 
         this.serverThread = new Thread(new ServerThread(SERVERPORT1));
         this.serverThread.start();
-        this.serverThread = new Thread(new ServerThread(SERVERPORT2));
-        this.serverThread.start();
+        this.cotdequeuerThread = new Thread(new NewCotDequeuer());
+        this.cotdequeuerThread.start();
 
+    }
+
+    class NewCotDequeuer implements Runnable {
+
+        @Override
+        public void run() {
+            while (true) {
+                String newCot = newCotQueue.poll();
+                if (newCot != null) {
+                    Log.d(TAG, "dequeuing new cot: " + newCot);
+                    notifyRegisteredDevices(newCot);
+                }
+            }
+        }
     }
 
     class ServerThread implements Runnable {
@@ -173,8 +183,10 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
                     try {
                         byte[] msg = readMessage(in);
                         if (msg != null) {
-                            lastCot = new String(msg, StandardCharsets.UTF_8);
-                            Log.d(TAG, "Read message from connection: " + lastCot);
+                            String newCot = new String(msg, StandardCharsets.UTF_8);
+                            newCotQueue.add(newCot);
+                            lastCot = newCot;
+                            Log.d(TAG, "Read message from connection: " + newCot);
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "error reading message from input stream", e);
@@ -290,31 +302,6 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
     }
 
     /**
-     * Listens for system time changes and triggers a notification to
-     * Bluetooth subscribers.
-     */
-    private BroadcastReceiver mTimeReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            byte adjustReason;
-            switch (intent.getAction()) {
-                case Intent.ACTION_TIME_CHANGED:
-                    adjustReason = TimeProfile.ADJUST_MANUAL;
-                    break;
-                case Intent.ACTION_TIMEZONE_CHANGED:
-                    adjustReason = TimeProfile.ADJUST_TIMEZONE;
-                    break;
-                default:
-                case Intent.ACTION_TIME_TICK:
-                    adjustReason = TimeProfile.ADJUST_NONE;
-                    break;
-            }
-            long now = System.currentTimeMillis();
-            notifyRegisteredDevices(now, adjustReason);
-        }
-    };
-
-    /**
      * Listens for Bluetooth adapter events to enable/disable
      * advertising and server functionality.
      */
@@ -427,19 +414,18 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
      * to the characteristic.
      */
     @SuppressLint("MissingPermission")
-    private void notifyRegisteredDevices(long timestamp, byte adjustReason) {
+    private void notifyRegisteredDevices(String newCot) {
         if (mRegisteredDevices.isEmpty()) {
             Log.i(TAG, "No subscribers registered");
             return;
         }
-        byte[] exactTime = TimeProfile.getExactTime(timestamp, adjustReason);
 
         Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
         for (BluetoothDevice device : mRegisteredDevices) {
             BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
                     .getService(TimeProfile.TIME_SERVICE)
                     .getCharacteristic(TimeProfile.CURRENT_TIME);
-            timeCharacteristic.setValue(exactTime);
+            timeCharacteristic.setValue(newCot.getBytes(StandardCharsets.UTF_8));
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
         }
     }
