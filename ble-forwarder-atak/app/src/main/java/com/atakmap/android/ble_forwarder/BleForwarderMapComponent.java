@@ -7,6 +7,7 @@ import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattServer;
@@ -17,6 +18,9 @@ import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.BluetoothLeAdvertiser;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -51,9 +55,11 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.Timer;
@@ -92,6 +98,7 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
     private BluetoothManager mBluetoothManager;
     private BluetoothGattServer mBluetoothGattServer;
     private BluetoothLeAdvertiser mBluetoothLeAdvertiser;
+    private BluetoothLeScanner mBluetoothLeScanner;
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
@@ -101,6 +108,71 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
     private final static String TAK_RESPONSE_TYPE = "t-x-takp-r";
     private final static String TAK_PING_TYPE = "t-x-c-t";
     private final static int TIMEOUT_MILLIS = 60000;
+
+    private final static String SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb";
+
+    BluetoothGatt mBluetoothGatt;
+
+    // Device scan callback.
+    private ScanCallback leScanCallback = new ScanCallback() {
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+            Log.d(TAG, "Got scan result: " + result.getDevice().getName());
+            List<UUID> serviceUUIDs = getServiceUUIDsList(result);
+            Log.d(TAG, "Got service UUID's: " + serviceUUIDs);
+            if (serviceUUIDs.contains(SERVICE_UUID)) {
+                Log.d(TAG, "Found connectable device.");
+            }
+        }
+    };
+
+    // Device connect call back
+    private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback() {
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
+            // this will get called anytime you perform a read or write characteristic operation
+
+        }
+
+        @Override
+        public void onConnectionStateChange(final BluetoothGatt gatt, final int status, final int newState) {
+            // this will get called when a device connects or disconnects
+            System.out.println(newState);
+            switch (newState) {
+                case 0:
+                    //disconnected
+                    break;
+                case 2:
+                    //connected
+
+                    // discover services and characteristics for this device
+                    //bluetoothGatt.discoverServices();
+
+                    break;
+                default:
+                    //unknown state
+                    break;
+            }
+        }
+
+        @Override
+        public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
+
+            //displayGattServices(bluetoothGatt.getServices());
+        }
+
+        @Override
+        // Result of a characteristic read operation
+        public void onCharacteristicRead(BluetoothGatt gatt,
+                                         BluetoothGattCharacteristic characteristic,
+                                         int status) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                //get data from characteristic
+            }
+        }
+    };
 
     @SuppressLint("MissingPermission")
     public void onCreate(final Context context, Intent intent,
@@ -128,6 +200,7 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
             Log.d(TAG, "Bluetooth enabled...starting services");
             startAdvertising();
             startServer();
+            startScanning();
         }
 
         Log.d(TAG, "Finished bluetooth related setup.");
@@ -412,11 +485,17 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(true)
                 .setIncludeTxPowerLevel(false)
-                .addServiceUuid(new ParcelUuid(UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")))
+                .addServiceUuid(new ParcelUuid(UUID.fromString(SERVICE_UUID)))
                 .build();
 
         mBluetoothLeAdvertiser
                 .startAdvertising(settings, data, mAdvertiseCallback);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void startScanning() {
+        mBluetoothLeScanner = mBluetoothManager.getAdapter().getBluetoothLeScanner();
+        mBluetoothLeScanner.startScan(leScanCallback);
     }
 
     /**
@@ -491,6 +570,8 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
         }
     }
+
+    // CODE FOR CONNECTING TO DEVICES AS PERIPHERAL
 
     /**
      * Callback to handle incoming requests to the GATT server.
@@ -602,4 +683,22 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
             }
         }
     };
+
+    private List<UUID> getServiceUUIDsList(ScanResult scanResult)
+    {
+        List<ParcelUuid> parcelUuids = scanResult.getScanRecord().getServiceUuids();
+
+        List<UUID> serviceList = new ArrayList<>();
+
+        for (int i = 0; i < parcelUuids.size(); i++)
+        {
+            UUID serviceUUID = parcelUuids.get(i).getUuid();
+
+            if (!serviceList.contains(serviceUUID))
+                serviceList.add(serviceUUID);
+        }
+
+        return serviceList;
+    }
+
 }
