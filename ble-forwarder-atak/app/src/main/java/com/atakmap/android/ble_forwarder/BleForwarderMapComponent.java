@@ -25,6 +25,7 @@ import android.content.pm.PackageManager;
 import android.os.ParcelUuid;
 import android.text.format.DateFormat;
 
+import com.atakmap.android.ble_forwarder.util.DateUtil;
 import com.atakmap.android.ipc.AtakBroadcast.DocumentedIntentFilter;
 
 import com.atakmap.android.maps.MapView;
@@ -44,6 +45,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -95,6 +97,10 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
 
     public static String lastCot = "";
+
+    private final static String TAK_RESPONSE_TYPE = "t-x-takp-r";
+    private final static String TAK_PING_TYPE = "t-x-c-t";
+    private final static int TIMEOUT_MILLIS = 60000;
 
     @SuppressLint("MissingPermission")
     public void onCreate(final Context context, Intent intent,
@@ -209,19 +215,40 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
                             String expression = "/event";
                             NodeList nodeList = (NodeList) xPath.compile(expression).evaluate(
                                     doc, XPathConstants.NODESET);
+                            String type = "";
+                            String uid = "";
                             for (int i = 0; i < nodeList.getLength(); i++) {
                                 if (i == 0) {
                                     Node n = nodeList.item(i);
                                     Element e = (Element) n;
-                                    String type = e.getAttribute("type");
+                                    type = e.getAttribute("type");
                                     Log.d(TAG, "Got CoT with type: " + type);
-                                }
+                                    uid = e.getAttribute("uid");
+                                    Log.d(TAG, "Got uid for coT: " + uid);
 
+                                    if (type.equals(TAK_PING_TYPE)) {
+                                        long millis = System.currentTimeMillis();
+                                        String startAndTime = DateUtil.toCotTime(millis);
+                                        String stale = DateUtil.toCotTime(millis + TIMEOUT_MILLIS);
+
+                                        String response = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>" +
+                                                "<event version='2.0' uid='" + uid + "' type='" + TAK_RESPONSE_TYPE +"' time='"
+                                                + startAndTime + "' start='" + startAndTime + "' stale='" + stale + "' how='m-g'>" +
+                                                "<point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>" +
+                                                "<detail><TakControl><TakResponse status='" + true + "'/></TakControl></detail>" +
+                                                "</event>";
+
+                                        OutputStream os = socket.getOutputStream();
+                                        os.write(response.getBytes(StandardCharsets.UTF_8));
+                                    }
+
+                                }
                             }
 
                             newCotQueue.add(newCot);
                             lastCot = newCot;
                             Log.d(TAG, "Read message from connection: " + newCot);
+
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "error reading message from input stream", e);
@@ -575,27 +602,4 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
             }
         }
     };
-
-//    public static CotEventContainer buildProtocolResponse(boolean status, String negotiationUuid) throws DocumentException {
-//
-//        if (log.isDebugEnabled()) {
-//            log.debug("buildProtocolResponse for : " + negotiationUuid + ", " + status);
-//        }
-//
-//        long millis = System.currentTimeMillis();
-//        String startAndTime = DateUtil.toCotTime(millis);
-//        String stale = DateUtil.toCotTime(millis + TIMEOUT_MILLIS);
-//
-//        String response = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>" +
-//                "<event version='2.0' uid='" + negotiationUuid + "' type='" + TAK_RESPONSE_TYPE +"' time='"
-//                + startAndTime + "' start='" + startAndTime + "' stale='" + stale + "' how='m-g'>" +
-//                "<point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>" +
-//                "<detail><TakControl><TakResponse status='" + status + "'/></TakControl></detail>" +
-//                "</event>";
-//
-//        SAXReader reader = new SAXReader();
-//        Document doc = reader.read(new ByteArrayInputStream(response.getBytes()));
-//        CotEventContainer cotEventContainer = new CotEventContainer(doc);
-//        return cotEventContainer;
-//    }
 }
