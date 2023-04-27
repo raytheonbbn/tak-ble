@@ -33,7 +33,13 @@ import com.atakmap.android.dropdown.DropDownMapComponent;
 import com.atakmap.coremap.log.Log;
 import com.atakmap.android.ble_forwarder.plugin.R;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
 import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -51,6 +57,12 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
 
 public class BleForwarderMapComponent extends DropDownMapComponent {
 
@@ -184,6 +196,29 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
                         byte[] msg = readMessage(in);
                         if (msg != null) {
                             String newCot = new String(msg, StandardCharsets.UTF_8);
+
+                            DocumentBuilderFactory factory =
+                                    DocumentBuilderFactory.newInstance();
+                            DocumentBuilder builder = factory.newDocumentBuilder();
+                            StringBuilder xmlStringBuilder = new StringBuilder();
+                            xmlStringBuilder.append(newCot);
+                            ByteArrayInputStream input =  new ByteArrayInputStream(
+                                    xmlStringBuilder.toString().getBytes("UTF-8"));
+                            Document doc = builder.parse(input);
+                            XPath xPath =  XPathFactory.newInstance().newXPath();
+                            String expression = "/event";
+                            NodeList nodeList = (NodeList) xPath.compile(expression).evaluate(
+                                    doc, XPathConstants.NODESET);
+                            for (int i = 0; i < nodeList.getLength(); i++) {
+                                if (i == 0) {
+                                    Node n = nodeList.item(i);
+                                    Element e = (Element) n;
+                                    String type = e.getAttribute("type");
+                                    Log.d(TAG, "Got CoT with type: " + type);
+                                }
+
+                            }
+
                             newCotQueue.add(newCot);
                             lastCot = newCot;
                             Log.d(TAG, "Read message from connection: " + newCot);
@@ -540,4 +575,27 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
             }
         }
     };
+
+//    public static CotEventContainer buildProtocolResponse(boolean status, String negotiationUuid) throws DocumentException {
+//
+//        if (log.isDebugEnabled()) {
+//            log.debug("buildProtocolResponse for : " + negotiationUuid + ", " + status);
+//        }
+//
+//        long millis = System.currentTimeMillis();
+//        String startAndTime = DateUtil.toCotTime(millis);
+//        String stale = DateUtil.toCotTime(millis + TIMEOUT_MILLIS);
+//
+//        String response = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>" +
+//                "<event version='2.0' uid='" + negotiationUuid + "' type='" + TAK_RESPONSE_TYPE +"' time='"
+//                + startAndTime + "' start='" + startAndTime + "' stale='" + stale + "' how='m-g'>" +
+//                "<point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>" +
+//                "<detail><TakControl><TakResponse status='" + status + "'/></TakControl></detail>" +
+//                "</event>";
+//
+//        SAXReader reader = new SAXReader();
+//        Document doc = reader.read(new ByteArrayInputStream(response.getBytes()));
+//        CotEventContainer cotEventContainer = new CotEventContainer(doc);
+//        return cotEventContainer;
+//    }
 }
