@@ -95,6 +95,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
     public TextView textView;
     public Button startScanButton;
+    public Button disconnectButton;
 
     Handler handler;
 
@@ -152,6 +153,18 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                 bleScannerThread = new Thread(new MainDropDownReceiver.BLEScanner());
                 bleScannerThread.start();
                 startScanButton.setEnabled(false);
+            }
+        });
+
+        disconnectButton = templateView.findViewById(R.id.disconnectButton);
+        disconnectButton.setEnabled(false);
+        disconnectButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (mBluetoothGatt != null) {
+                    mBluetoothGatt.disconnect();
+                    mBluetoothGatt = null;
+                }
             }
         });
 
@@ -306,7 +319,13 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             Log.d(TAG, "Stopping scan for ble devices");
             logMessages.add("Stopping scan for ble devices.");
             if (mBluetoothGatt == null) {
-                startScanButton.setEnabled(true);
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        startScanButton.setEnabled(true);
+                    }
+                });
+
             }
 
         }
@@ -781,9 +800,22 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             switch (newState) {
                 case 0:
                     logMessages.add("Disconnected from device.");
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            disconnectButton.setEnabled(false);
+                            startScanButton.setEnabled(true);
+                        }
+                    });
                     break;
                 case 2:
                     logMessages.add("Connected to device.");
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            disconnectButton.setEnabled(true);
+                        }
+                    });
 
                     // discover services and characteristics for this device
                     mBluetoothGatt.discoverServices();
@@ -795,6 +827,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             }
         }
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
             // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
@@ -805,8 +838,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                     BluetoothGattCharacteristic characteristic = service.getCharacteristic(CHARACTERISTIC_UUID);
                     if (characteristic != null) {
                         logMessages.add("Found data transfer characteristic, trying to read data...");
-                        String value = characteristic.getStringValue(0);
-                        logMessages.add("Read value from characteristic: " + value);
+                        mBluetoothGatt.readCharacteristic(characteristic);
                     }
                 }
             }
@@ -818,8 +850,10 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         public void onCharacteristicRead(BluetoothGatt gatt,
                                          BluetoothGattCharacteristic characteristic,
                                          int status) {
+            logMessages.add("onCharacteristicRead with status " + status);
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 logMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
+                logMessages.add("Got value: " + characteristic.getStringValue(0));
             }
         }
     };

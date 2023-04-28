@@ -4,12 +4,27 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <Button
-        android:id="@+id/startScanButton"
-        style="@style/darkButton"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start Scan" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/startScanButton"
+            style="@style/darkButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Start Scan" />
+
+        <Button
+            android:id="@+id/disconnectButton"
+            style="@style/darkButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Disconnect" />
+    </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
