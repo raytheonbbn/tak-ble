@@ -57,6 +57,7 @@ import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -120,9 +121,6 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
     public static Queue<String> logMessages = new ArrayBlockingQueue<>(1000);
-
-    private static final UUID SERVICE_UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb");
-    private static final UUID CHARACTERISTIC_UUID = UUID.fromString("00002A00-0000-1000-8000-00805f9b34fb");
 
     public static String lastCot = "";
 
@@ -275,8 +273,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                 Log.d(TAG, "Found device with address " + result.getDevice().getAddress());
                 List<UUID> serviceUUIDs = BLEUtil.getServiceUUIDsList(result);
                 Log.d(TAG, "Device had service uuids: " + serviceUUIDs);
-                if (serviceUUIDs.contains(SERVICE_UUID)) {
-                    logMessages.add("Found device with service uuid " + SERVICE_UUID);
+                if (serviceUUIDs.contains(TimeProfile.TIME_SERVICE)) {
+                    logMessages.add("Found device with service uuid " + TimeProfile.TIME_SERVICE);
                     mBluetoothScanner.stopScan(this);
 
                     if (mBluetoothGatt == null) {
@@ -287,7 +285,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             }
         };
 
-        UUID[] serviceUUIDsToScan = new UUID[] { SERVICE_UUID };
+        UUID[] serviceUUIDsToScan = new UUID[] { TimeProfile.TIME_SERVICE };
 
         @SuppressLint("MissingPermission")
         @Override
@@ -592,7 +590,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(true)
                 .setIncludeTxPowerLevel(false)
-                .addServiceUuid(new ParcelUuid(SERVICE_UUID))
+                .addServiceUuid(new ParcelUuid(TimeProfile.TIME_SERVICE))
                 .build();
 
         mBluetoothLeAdvertiser
@@ -789,7 +787,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
             // this will get called anytime you perform a read or write characteristic operation
-            logMessages.add("Read or wrote from characteristic with uuid " + characteristic.getUuid());
+            logMessages.add("Got new value for characteristic with uuid " + characteristic.getUuid() + ":\n" + characteristic.getStringValue(0));
         }
 
         @SuppressLint("MissingPermission")
@@ -809,7 +807,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                     });
                     break;
                 case 2:
-                    logMessages.add("Connected to device.");
+                    logMessages.add("Connected to device with address: " + gatt.getDevice().getAddress());
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
@@ -832,13 +830,25 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
             // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
             logMessages.add("Discovered services for connected device.");
+            List<UUID> serviceUUIDs = new ArrayList<>();
             for (BluetoothGattService service : mBluetoothGatt.getServices()) {
-                if (service.getUuid().equals(SERVICE_UUID)) {
+                logMessages.add("Got service with uuid " + service.getUuid());
+                serviceUUIDs.add(service.getUuid());
+                if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
                     logMessages.add("Found data transfer service, trying to read data...");
-                    BluetoothGattCharacteristic characteristic = service.getCharacteristic(CHARACTERISTIC_UUID);
+                    BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);
                     if (characteristic != null) {
-                        logMessages.add("Found data transfer characteristic, trying to read data...");
+                        logMessages.add("Found data transfer characteristic, trying to read data / subscribe to notifications...");
                         mBluetoothGatt.readCharacteristic(characteristic);
+                        characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                        mBluetoothGatt.setCharacteristicNotification(characteristic, true);
+                        // 0x2902 org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
+                        UUID uuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+                        BluetoothGattDescriptor descriptor = characteristic.getDescriptor(uuid);
+                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                        mBluetoothGatt.writeDescriptor(descriptor);
+                    } else {
+                        logMessages.add("Did not find data transfer characteristic...");
                     }
                 }
             }
