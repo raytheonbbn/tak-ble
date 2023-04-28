@@ -3,7 +3,10 @@ package com.atakmap.android.ble_forwarder;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
+import android.widget.TextView;
 
 import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.ble_forwarder.plugin.R;
@@ -34,6 +37,12 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     public static final int SERVER_PORT = 8080;
     String message;
 
+    Thread loggerThread = null;
+
+    public TextView textView;
+
+    Handler handler;
+
     /**************************** CONSTRUCTOR *****************************/
 
     public MainDropDownReceiver(final MapView mapView,
@@ -47,6 +56,31 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         // developers to look at this Inflator
         templateView = PluginLayoutInflater.inflate(context,
                 R.layout.main_layout, null);
+
+        textView = templateView.findViewById(R.id.textView);
+
+        handler = new Handler(Looper.getMainLooper());
+
+        this.loggerThread = new Thread(new UILogger());
+        this.loggerThread.start();
+    }
+
+    class UILogger implements Runnable {
+        @Override
+        public void run() {
+            Log.d(TAG, "Starting UI logger...");
+            while (true) {
+                String msg = BleForwarderMapComponent.logMessages.poll();
+                if (textView != null && msg != null) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            textView.append(msg + "\n" + "---" + "\n");
+                        }
+                    });
+                }
+            }
+        }
     }
 
     @Override

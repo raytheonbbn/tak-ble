@@ -17,6 +17,11 @@ import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.BluetoothLeAdvertiser;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
+import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -24,7 +29,9 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.ParcelUuid;
 import android.text.format.DateFormat;
+import android.widget.TextView;
 
+import com.atakmap.android.ble_forwarder.util.BLEUtil;
 import com.atakmap.android.ble_forwarder.util.DateUtil;
 import com.atakmap.android.ipc.AtakBroadcast.DocumentedIntentFilter;
 
@@ -51,9 +58,11 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.Timer;
@@ -82,6 +91,7 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
 
     Thread serverThread = null;
     Thread cotdequeuerThread = null;
+    Thread bleScannerThread = null;
 
     byte[] delimiter = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
 
@@ -92,9 +102,13 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
     private BluetoothManager mBluetoothManager;
     private BluetoothGattServer mBluetoothGattServer;
     private BluetoothLeAdvertiser mBluetoothLeAdvertiser;
+    private BluetoothLeScanner mBluetoothScanner;
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
+    public static Queue<String> logMessages = new ArrayBlockingQueue<>(1000);
+
+    private static final String SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb";
 
     public static String lastCot = "";
 
@@ -108,7 +122,7 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
 
         Log.d(TAG, "Creating the dino plugin thing.");
 
-        mBluetoothManager = (BluetoothManager) MapView.getMapView().getContext().getSystemService(BLUETOOTH_SERVICE);
+                mBluetoothManager = (BluetoothManager) MapView.getMapView().getContext().getSystemService(BLUETOOTH_SERVICE);
         BluetoothAdapter bluetoothAdapter = mBluetoothManager.getAdapter();
         // We can't continue without proper Bluetooth support
         if (!checkBluetoothSupport(bluetoothAdapter)) {
@@ -128,6 +142,10 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
             Log.d(TAG, "Bluetooth enabled...starting services");
             startAdvertising();
             startServer();
+
+            mBluetoothScanner = mBluetoothManager.getAdapter().getBluetoothLeScanner();
+            this.bleScannerThread = new Thread(new BLEScanner());
+            this.bleScannerThread.start();
         }
 
         Log.d(TAG, "Finished bluetooth related setup.");
@@ -149,6 +167,57 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
         this.serverThread.start();
         this.cotdequeuerThread = new Thread(new NewCotDequeuer());
         this.cotdequeuerThread.start();
+
+    }
+
+    class BLEScanner implements Runnable {
+
+        ScanCallback leScanCallback = new ScanCallback() {
+            @Override
+            public void onScanResult(int callbackType, ScanResult result) {
+                Log.d(TAG, "Got callbacktype: " + callbackType);
+                Log.d(TAG, "Found device with address " + result.getDevice().getAddress());
+                List<UUID> serviceUUIDs = BLEUtil.getServiceUUIDsList(result);
+                Log.d(TAG, "Device had service uuids: " + serviceUUIDs);
+                if (serviceUUIDs.contains(UUID.fromString(SERVICE_UUID))) {
+                    logMessages.add("Found device with service uuid " + SERVICE_UUID);
+                }
+            }
+        };
+
+        UUID[] serviceUUIDsToScan = new UUID[] { UUID.fromString(SERVICE_UUID) };
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void run() {
+            Log.d(TAG, "Starting scan for ble devices");
+            logMessages.add("Starting scan for BLE devices...");
+
+//            List<ScanFilter> filters = new ArrayList<>();
+//            for (UUID uuid : serviceUUIDsToScan) {
+//                filters.add(new ScanFilter.Builder().setServiceUuid(new ParcelUuid(uuid)).build());
+//            }
+//
+//            ScanSettings settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build();
+//
+//            // ScanFilter doesn't work with startScan() if there are too many - more than 63bits - ignore
+//            // bits. So we call startScan() without a scan filter for base/mask uuids and match scan results
+//            // against it.
+//            final ScanFilter matcher = new ScanFilter.Builder().setServiceUuid(mScanBaseUuid, mScanMaskUuid).build();
+
+            mBluetoothScanner.startScan(leScanCallback);
+
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                Log.e(TAG, "Interrupted", e);
+            }
+
+            mBluetoothScanner.stopScan(leScanCallback);
+            Log.d(TAG, "Stopping scan for ble devices");
+            logMessages.add("Stopping scan for ble devices.");
+
+        }
 
     }
 
@@ -412,7 +481,7 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(true)
                 .setIncludeTxPowerLevel(false)
-                .addServiceUuid(new ParcelUuid(UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")))
+                .addServiceUuid(new ParcelUuid(UUID.fromString(SERVICE_UUID)))
                 .build();
 
         mBluetoothLeAdvertiser
