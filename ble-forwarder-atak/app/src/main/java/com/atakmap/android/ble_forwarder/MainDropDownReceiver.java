@@ -26,6 +26,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
@@ -92,9 +93,13 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     public static final int SERVER_PORT = 8080;
     String message;
 
-    Thread loggerThread = null;
+    Thread peripheralLoggerThread = null;
+    Thread centralLoggerThread = null;
 
-    public TextView textView;
+    public TextView peripheralLogTextView;
+    public TextView centralLogTextView;
+    public TextView serverStatusTextView;
+    public TextView connectionStatusTextView;
     public Button startScanButton;
     public Button disconnectButton;
 
@@ -111,6 +116,12 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     boolean includeDelimiter = true;
     boolean ignoreNewlineErrors = true;
 
+    public static final String SERVER_STATUS_DOWN = "DOWN";
+    public static final String SERVER_STATUS_UP = "UP";
+    public static final String REMOTE_DEVICE_CONNECTED = "CONNECTED";
+    public static final String REMOTE_DEVICE_NOT_CONNECTED = "NOT CONNECTED";
+    public static final String REMOTE_DEVICE_CONNECTING = "CONNECTING";
+
     /* Bluetooth API */
     private BluetoothManager mBluetoothManager;
     private BluetoothGattServer mBluetoothGattServer;
@@ -120,7 +131,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
-    public static Queue<String> logMessages = new ArrayBlockingQueue<>(1000);
+    public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
+    public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
 
     public static String lastCot = "";
 
@@ -143,7 +155,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         templateView = PluginLayoutInflater.inflate(context,
                 R.layout.main_layout, null);
 
-        textView = templateView.findViewById(R.id.textView);
+        peripheralLogTextView = templateView.findViewById(R.id.textView);
+        centralLogTextView = templateView.findViewById(R.id.serverLogs);
         startScanButton = templateView.findViewById(R.id.startScanButton);
         startScanButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -166,18 +179,30 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             }
         });
 
+        serverStatusTextView = templateView.findViewById(R.id.serverStatus);
+        serverStatusTextView.setText(SERVER_STATUS_DOWN);
+        serverStatusTextView.setTextColor(Color.RED);
+
+        connectionStatusTextView = templateView.findViewById(R.id.remoteConnectionStatus);
+        connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
+        connectionStatusTextView.setTextColor(Color.RED);
+
         handler = new Handler(Looper.getMainLooper());
 
-        this.loggerThread = new Thread(new UILogger());
-        this.loggerThread.start();
+        this.peripheralLoggerThread = new Thread(new PeripheralLogger());
+        this.peripheralLoggerThread.start();
+        this.centralLoggerThread = new Thread(new CentralLogger());
+        this.centralLoggerThread.start();
 
         mBluetoothManager = (BluetoothManager) MapView.getMapView().getContext().getSystemService(BLUETOOTH_SERVICE);
         BluetoothAdapter bluetoothAdapter = mBluetoothManager.getAdapter();
         // We can't continue without proper Bluetooth support
         if (!checkBluetoothSupport(bluetoothAdapter)) {
             Log.e(TAG, "NO BLUETOOTH SUPPORT!");
+            centralLogMessages.add("FOUND THAT THERE WAS NO BLUETOOTH SUPPORT!!!:");
             return;
         } else {
+            centralLogMessages.add("Found that there was bluetooth support.");
             Log.d(TAG, "found that there was bluetooth support");
         }
 
@@ -187,8 +212,10 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         if (!bluetoothAdapter.isEnabled()) {
             Log.d(TAG, "Bluetooth is currently disabled...enabling");
             bluetoothAdapter.enable();
+            centralLogMessages.add("Enabling bluetooth...");
         } else {
             Log.d(TAG, "Bluetooth enabled...starting services");
+            centralLogMessages.add("Bluetooth enabled, starting services...");
             startAdvertising();
             startServer();
 
@@ -203,17 +230,37 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         this.cotdequeuerThread.start();
     }
 
-    class UILogger implements Runnable {
+    class PeripheralLogger implements Runnable {
+
         @Override
         public void run() {
             Log.d(TAG, "Starting UI logger...");
             while (true) {
-                String msg = logMessages.poll();
-                if (textView != null && msg != null) {
+                String msg = peripheralLogMessages.poll();
+                if (peripheralLogTextView != null && msg != null) {
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            textView.append(msg + "\n" + "---" + "\n");
+                            peripheralLogTextView.append(msg + "\n" + "---" + "\n");
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    class CentralLogger implements Runnable {
+
+        @Override
+        public void run() {
+            Log.d(TAG, "Starting UI logger...");
+            while (true) {
+                String msg = centralLogMessages.poll();
+                if (centralLogTextView != null && msg != null) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            centralLogTextView.append(msg + "\n" + "---" + "\n");
                         }
                     });
                 }
@@ -274,11 +321,11 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                 List<UUID> serviceUUIDs = BLEUtil.getServiceUUIDsList(result);
                 Log.d(TAG, "Device had service uuids: " + serviceUUIDs);
                 if (serviceUUIDs.contains(TimeProfile.TIME_SERVICE)) {
-                    logMessages.add("Found device with service uuid " + TimeProfile.TIME_SERVICE);
+                    peripheralLogMessages.add("Found device with service uuid " + TimeProfile.TIME_SERVICE);
                     mBluetoothScanner.stopScan(this);
 
                     if (mBluetoothGatt == null) {
-                        logMessages.add("Found that no connection has been made yet, connecting to device.");
+                        peripheralLogMessages.add("Found that no connection has been made yet, connecting to device.");
                         mBluetoothGatt = result.getDevice().connectGatt(MapView.getMapView().getContext(), false, btleGattCallback);
                     }
                 }
@@ -291,7 +338,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         @Override
         public void run() {
             Log.d(TAG, "Starting scan for ble devices");
-            logMessages.add("Starting scan for BLE devices...");
+            peripheralLogMessages.add("Starting scan for BLE devices...");
 
 //            List<ScanFilter> filters = new ArrayList<>();
 //            for (UUID uuid : serviceUUIDsToScan) {
@@ -315,7 +362,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
             mBluetoothScanner.stopScan(leScanCallback);
             Log.d(TAG, "Stopping scan for ble devices");
-            logMessages.add("Stopping scan for ble devices.");
+            peripheralLogMessages.add("Stopping scan for ble devices.");
             if (mBluetoothGatt == null) {
                 handler.post(new Runnable() {
                     @Override
@@ -423,8 +470,10 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                                 }
                             }
 
-                            newCotQueue.add(newCot);
-                            lastCot = newCot;
+                            if (!type.equals(TAK_PING_TYPE)) {
+                                newCotQueue.add(newCot);
+                                lastCot = newCot;
+                            }
                             Log.d(TAG, "Read message from connection: " + newCot);
 
                         }
@@ -573,6 +622,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     @SuppressLint("MissingPermission")
     private void startAdvertising() {
         Log.d(TAG, "starting advertising");
+        centralLogMessages.add("Starting BLE advertising");
         BluetoothAdapter bluetoothAdapter = mBluetoothManager.getAdapter();
         mBluetoothLeAdvertiser = bluetoothAdapter.getBluetoothLeAdvertiser();
         if (mBluetoothLeAdvertiser == null) {
@@ -614,13 +664,26 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     @SuppressLint("MissingPermission")
     private void startServer() {
         Log.d(TAG, "starting server");
+        centralLogMessages.add("Starting BLE central server...");
         mBluetoothGattServer = mBluetoothManager.openGattServer(MapView.getMapView().getContext(), mGattServerCallback);
         if (mBluetoothGattServer == null) {
             Log.w(TAG, "Unable to create GATT server");
+            centralLogMessages.add("Unable to start GATT server.");
             return;
+        } else {
+            centralLogMessages.add("Successfully started BLE server.");
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    serverStatusTextView.setText(SERVER_STATUS_UP);
+                    serverStatusTextView.setTextColor(Color.GREEN);
+                }
+            });
+
         }
 
         mBluetoothGattServer.addService(TimeProfile.createTimeService());
+        centralLogMessages.add("Added service for data transfer.");
 
     }
 
@@ -660,6 +723,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             return;
         }
 
+        centralLogMessages.add("Updating connected devices with new cot:\n" + newCot);
+
         Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
         for (BluetoothDevice device : mRegisteredDevices) {
             BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
@@ -676,16 +741,41 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
      */
     private BluetoothGattServerCallback mGattServerCallback = new BluetoothGattServerCallback() {
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                Log.d(TAG, "BluetoothDevice CONNECTED: " + device);
+                centralLogMessages.add("BluetoothDevice CONNECTED: " + device.getAddress());
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        connectionStatusTextView.setText(REMOTE_DEVICE_CONNECTED);
+                        connectionStatusTextView.setTextColor(Color.GREEN);
+                    }
+                });
+
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                Log.d(TAG, "BluetoothDevice DISCONNECTED: " + device);
+                centralLogMessages.add("BluetoothDevice DISCONNECTED: " + device.getAddress());
                 //Remove device from any active subscriptions
                 mRegisteredDevices.remove(device);
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
+                        connectionStatusTextView.setTextColor(Color.RED);
+                    }
+                });
+
             } else if (newState == BluetoothProfile.STATE_CONNECTING) {
-                Log.d(TAG, "Detected device in connecting state.");
+                centralLogMessages.add("Detected device in connecting state: " + device.getAddress());
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        connectionStatusTextView.setText(REMOTE_DEVICE_CONNECTING);
+                        connectionStatusTextView.setTextColor(Color.YELLOW);
+                    }
+                });
+
             }
         }
 
@@ -787,7 +877,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
             // this will get called anytime you perform a read or write characteristic operation
-            logMessages.add("Got new value for characteristic with uuid " + characteristic.getUuid() + ":\n" + characteristic.getStringValue(0));
+            peripheralLogMessages.add("Got new value for characteristic with uuid " + characteristic.getUuid() + ":\n" + characteristic.getStringValue(0));
         }
 
         @SuppressLint("MissingPermission")
@@ -797,7 +887,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             System.out.println(newState);
             switch (newState) {
                 case 0:
-                    logMessages.add("Disconnected from device.");
+                    peripheralLogMessages.add("Disconnected from device.");
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
@@ -807,7 +897,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                     });
                     break;
                 case 2:
-                    logMessages.add("Connected to device with address: " + gatt.getDevice().getAddress());
+                    peripheralLogMessages.add("Connected to device with address: " + gatt.getDevice().getAddress());
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
@@ -820,7 +910,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
                     break;
                 default:
-                    logMessages.add("Encountered unknown state with device!");
+                    peripheralLogMessages.add("Encountered unknown state with device!");
                     break;
             }
         }
@@ -829,17 +919,17 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         @Override
         public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
             // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
-            logMessages.add("Discovered services for connected device.");
+            peripheralLogMessages.add("Discovered services for connected device.");
             List<UUID> serviceUUIDs = new ArrayList<>();
             for (BluetoothGattService service : mBluetoothGatt.getServices()) {
-                logMessages.add("Got service with uuid " + service.getUuid());
+                peripheralLogMessages.add("Got service with uuid " + service.getUuid());
                 serviceUUIDs.add(service.getUuid());
                 if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
-                    logMessages.add("Found data transfer service, trying to read data...");
+                    peripheralLogMessages.add("Found data transfer service, trying to read data...");
                     BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);
                     if (characteristic != null) {
-                        logMessages.add("Found data transfer characteristic, trying to read data / subscribe to notifications...");
-                        mBluetoothGatt.readCharacteristic(characteristic);
+                        peripheralLogMessages.add("Found data transfer characteristic, trying to subscribe to notifications...");
+//                        mBluetoothGatt.readCharacteristic(characteristic);
                         characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
                         mBluetoothGatt.setCharacteristicNotification(characteristic, true);
                         // 0x2902 org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
@@ -848,7 +938,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                         descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                         mBluetoothGatt.writeDescriptor(descriptor);
                     } else {
-                        logMessages.add("Did not find data transfer characteristic...");
+                        peripheralLogMessages.add("Did not find data transfer characteristic...");
                     }
                 }
             }
@@ -860,10 +950,10 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         public void onCharacteristicRead(BluetoothGatt gatt,
                                          BluetoothGattCharacteristic characteristic,
                                          int status) {
-            logMessages.add("onCharacteristicRead with status " + status);
+            peripheralLogMessages.add("onCharacteristicRead with status " + status);
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                logMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
-                logMessages.add("Got value: " + characteristic.getStringValue(0));
+                peripheralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
+                peripheralLogMessages.add("Got value: " + characteristic.getStringValue(0));
             }
         }
     };
