@@ -135,6 +135,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
     public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
     public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
+    public static Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
 
     public static String lastCot = "";
 
@@ -397,7 +398,11 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                     for (int i = 0; i < lastCot.length(); i += READ_SIZE) {
                         try {
                             Thread.sleep(100);
-                        } catch (InterruptedException e) {
+                        } catch (InterruptedException e) {                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                            // then that means we are getting data in the middle of a CoT that we didn't get the start of -
+                            // just ignore all this data
+                            peripheralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
+
                             Log.e(TAG, "interrupted", e);
                         }
                         int lastIndex = i + READ_SIZE;
@@ -443,6 +448,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                 BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
 
                 while (!Thread.currentThread().isInterrupted()) {
+
+                    // input processing
 
                     Log.d(TAG, "Trying to read string from connection...");
                     try {
@@ -501,6 +508,19 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "error reading message from input stream", e);
+                    }
+
+                    // output processing
+
+                    if (!outgoingCotQueue.isEmpty()) {
+                        OutputStream os = socket.getOutputStream();
+                        while (!outgoingCotQueue.isEmpty()) {
+                            String outgoingCot = outgoingCotQueue.poll();
+                            if (outgoingCot != null) {
+                                os.write(outgoingCot.getBytes(StandardCharsets.UTF_8));
+                                peripheralLogMessages.add("Wrote cot received over BLE to local ATAK.");
+                            }
+                        }
                     }
 
                     Thread.sleep(1000);
@@ -936,7 +956,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
             if (receivedValue.startsWith(startDelimiterString)) {
                 peripheralLogMessages.add("Got start of CoT.");
-                receivedCot = startDelimiterString;
+                receivedCot = startDelimiterString + " ";
             } else {
                 if (receivedCot.equals("")) {
                     // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
@@ -952,8 +972,9 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
                     if (receivedCot.startsWith(startDelimiterString) && receivedCot.endsWith(delimiterString)) {
                         peripheralLogMessages.add("Received full cot: " + receivedCot);
+                        outgoingCotQueue.add(new String(receivedCot));
                         receivedCot = "";
-                        peripheralLogMessages.add("TODO: send CoT to ATAK");
+                        //peripheralLogMessages.add("TODO: send CoT to ATAK");
                     }
                 }
 
