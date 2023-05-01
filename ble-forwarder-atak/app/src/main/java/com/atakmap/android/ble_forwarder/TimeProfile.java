@@ -31,9 +31,11 @@ public class TimeProfile {
     private static final String TAG = TimeProfile.class.getSimpleName();
 
     /* Current Time Service UUID */
-    public static UUID TIME_SERVICE = UUID.fromString("00001805-0000-1000-8000-00805f9b34fb");
+    //public static UUID TIME_SERVICE = UUID.fromString("00001805-0000-1000-8000-00805f9b34fb");
+    public static UUID TIME_SERVICE = UUID.fromString("0000180D-0000-1000-8000-00805f9b34fb");
     /* Mandatory Current Time Information Characteristic */
-    public static UUID CURRENT_TIME    = UUID.fromString("00002a2b-0000-1000-8000-00805f9b34fb");
+    //public static UUID CURRENT_TIME    = UUID.fromString("00002a2b-0000-1000-8000-00805f9b34fb");
+    public static UUID CURRENT_TIME    = UUID.fromString("00002a00-0000-1000-8000-00805f9b34fb");
     /* Optional Local Time Information Characteristic */
     public static UUID LOCAL_TIME_INFO = UUID.fromString("00002a0f-0000-1000-8000-00805f9b34fb");
     /* Mandatory Client Characteristic Config Descriptor */

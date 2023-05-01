@@ -111,7 +111,9 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     Thread cotdequeuerThread = null;
     Thread bleScannerThread = null;
 
+    String startDelimiterString = "<?xml version=\"1.0\"";
     byte[] delimiter = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
+    String delimiterString = new String(delimiter, StandardCharsets.UTF_8);
 
     boolean includeDelimiter = true;
     boolean ignoreNewlineErrors = true;
@@ -139,6 +141,12 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     private final static String TAK_RESPONSE_TYPE = "t-x-takp-r";
     private final static String TAK_PING_TYPE = "t-x-c-t";
     private final static int TIMEOUT_MILLIS = 60000;
+
+    public static final int MAX_ATT_MTU = 517;
+
+    public static final int READ_SIZE = 20;
+
+    public static String receivedCot = "";
 
     /**************************** CONSTRUCTOR *****************************/
 
@@ -384,8 +392,22 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             while (true) {
                 String newCot = newCotQueue.poll();
                 if (newCot != null) {
+                    centralLogMessages.add("Got new cot from local ATAK");
                     Log.d(TAG, "dequeuing new cot: " + newCot);
-                    notifyRegisteredDevices(newCot);
+                    for (int i = 0; i < lastCot.length(); i += READ_SIZE) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            Log.e(TAG, "interrupted", e);
+                        }
+                        int lastIndex = i + READ_SIZE;
+                        if (lastIndex > lastCot.length()) {
+                            lastIndex = lastCot.length();
+                        }
+                        notifyRegisteredDevices(lastCot.substring(i, lastIndex));
+
+                    }
+
                 }
             }
         }
@@ -723,14 +745,16 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             return;
         }
 
+        byte[] newCotBytes = newCot.getBytes(StandardCharsets.UTF_8);
         centralLogMessages.add("Updating connected devices with new cot:\n" + newCot);
+        centralLogMessages.add("Length of new cot: " + newCotBytes.length);
 
         Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
         for (BluetoothDevice device : mRegisteredDevices) {
             BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
                     .getService(TimeProfile.TIME_SERVICE)
                     .getCharacteristic(TimeProfile.CURRENT_TIME);
-            timeCharacteristic.setValue(newCot.getBytes(StandardCharsets.UTF_8));
+            timeCharacteristic.setValue(newCotBytes);
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
         }
     }
@@ -785,12 +809,38 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                                                 BluetoothGattCharacteristic characteristic) {
             long now = System.currentTimeMillis();
             if (TimeProfile.CURRENT_TIME.equals(characteristic.getUuid())) {
-                Log.i(TAG, "Read CurrentTime");
-                mBluetoothGattServer.sendResponse(device,
-                        requestId,
-                        BluetoothGatt.GATT_SUCCESS,
-                        0,
-                        lastCot.getBytes(StandardCharsets.UTF_8));
+//                centralLogMessages.add("Got characteristic read request for current time.");
+//                Log.i(TAG, "Read CurrentTime");
+//                mBluetoothGattServer.sendResponse(device,
+//                        requestId,
+//                        BluetoothGatt.GATT_SUCCESS,
+//                        0,
+//                        lastCot.getBytes(StandardCharsets.UTF_8));
+//                super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
+//                Log.i(TAG, "onCharacteristicReadRequest " + characteristic.getUuid().toString());
+
+//
+//                byte[] fullValue = lastCot.getBytes(StandardCharsets.UTF_8);
+//                centralLogMessages.add("Length of lastCot: " + fullValue.length);
+//
+//                //check
+//                if (offset > fullValue.length) {
+//                    mBluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{0} );
+//                    centralLogMessages.add("Returning response for offset read greater than length of lastCot");
+//                    return;
+//
+//                }
+//
+//                int size = fullValue.length - offset;
+//                byte[] response = new byte[size];
+//
+//                for (int i = offset; i < fullValue.length; i++) {
+//                    response[i - offset] = fullValue[i];
+//                }
+//
+//                centralLogMessages.add("Sending response for read from offset " + offset);
+//                mBluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, response);
+
             } else if (TimeProfile.LOCAL_TIME_INFO.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read LocalTimeInfo");
                 mBluetoothGattServer.sendResponse(device,
@@ -874,10 +924,45 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     // Device connect call back
     private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback() {
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
             // this will get called anytime you perform a read or write characteristic operation
-            peripheralLogMessages.add("Got new value for characteristic with uuid " + characteristic.getUuid() + ":\n" + characteristic.getStringValue(0));
+
+            String receivedValue = characteristic.getStringValue(0);
+
+            //.add("Got notified of new value for characteristic with uuid " + characteristic.getUuid());
+            //peripheralLogMessages.add("Got characteristic value: " + receivedValue);
+
+            if (receivedValue.startsWith(startDelimiterString)) {
+                peripheralLogMessages.add("Got start of CoT.");
+                receivedCot = startDelimiterString;
+            } else {
+                if (receivedCot.equals("")) {
+                    // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                    // then that means we are getting data in the middle of a CoT that we didn't get the start of -
+                    // just ignore all this data
+//                    peripheralLogMessages.add("Ignoring this value, we didn't get start delimiter ("
+//                            + startDelimiterString + ") yet.");
+                } else {
+
+//                    peripheralLogMessages.add("Got non start delimiter value after receiving start delimiter, adding it to receivedCot...");
+
+                    receivedCot += receivedValue;
+
+                    if (receivedCot.startsWith(startDelimiterString) && receivedCot.endsWith(delimiterString)) {
+                        peripheralLogMessages.add("Received full cot: " + receivedCot);
+                        receivedCot = "";
+                        peripheralLogMessages.add("TODO: send CoT to ATAK");
+                    }
+                }
+
+            }
+
+            //peripheralLogMessages.add("Current value of receivedCot: " + receivedCot);
+
+            //mBluetoothGatt.readCharacteristic(characteristic);
+            //peripheralLogMessages.add("Read characteristic.");
         }
 
         @SuppressLint("MissingPermission")
@@ -918,29 +1003,37 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         @SuppressLint("MissingPermission")
         @Override
         public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
-            // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
-            peripheralLogMessages.add("Discovered services for connected device.");
-            List<UUID> serviceUUIDs = new ArrayList<>();
-            for (BluetoothGattService service : mBluetoothGatt.getServices()) {
-                peripheralLogMessages.add("Got service with uuid " + service.getUuid());
-                serviceUUIDs.add(service.getUuid());
-                if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
-                    peripheralLogMessages.add("Found data transfer service, trying to read data...");
-                    BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);
-                    if (characteristic != null) {
-                        peripheralLogMessages.add("Found data transfer characteristic, trying to subscribe to notifications...");
+
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+
+                //gatt.requestMtu(MAX_ATT_MTU);
+
+                // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
+                peripheralLogMessages.add("Discovered services for connected device.");
+                List<UUID> serviceUUIDs = new ArrayList<>();
+                for (BluetoothGattService service : mBluetoothGatt.getServices()) {
+                    peripheralLogMessages.add("Got service with uuid " + service.getUuid());
+                    serviceUUIDs.add(service.getUuid());
+                    if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
+                        peripheralLogMessages.add("Found data transfer service, trying to read data...");
+                        BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);
+                        if (characteristic != null) {
+                            peripheralLogMessages.add("Found data transfer characteristic, trying to subscribe to notifications...");
 //                        mBluetoothGatt.readCharacteristic(characteristic);
-                        characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-                        mBluetoothGatt.setCharacteristicNotification(characteristic, true);
-                        // 0x2902 org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
-                        UUID uuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
-                        BluetoothGattDescriptor descriptor = characteristic.getDescriptor(uuid);
-                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                        mBluetoothGatt.writeDescriptor(descriptor);
-                    } else {
-                        peripheralLogMessages.add("Did not find data transfer characteristic...");
+                            characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                            mBluetoothGatt.setCharacteristicNotification(characteristic, true);
+                            // 0x2902 org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
+                            UUID uuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+                            BluetoothGattDescriptor descriptor = characteristic.getDescriptor(uuid);
+                            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                            mBluetoothGatt.writeDescriptor(descriptor);
+                        } else {
+                            peripheralLogMessages.add("Did not find data transfer characteristic...");
+                        }
                     }
                 }
+            } else {
+                peripheralLogMessages.add("Failed to discover services: " + status);
             }
 
         }
@@ -954,8 +1047,16 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 peripheralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
                 peripheralLogMessages.add("Got value: " + characteristic.getStringValue(0));
+                Log.d(TAG, "Got value: " + characteristic.getStringValue(0));
             }
         }
+
+//        @Override
+//        public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
+//            if (status == BluetoothGatt.GATT_SUCCESS) {
+//                peripheralLogMessages.add("Successfully negotiated mtu of " + MAX_ATT_MTU);
+//            }
+//        }
     };
 
 }
