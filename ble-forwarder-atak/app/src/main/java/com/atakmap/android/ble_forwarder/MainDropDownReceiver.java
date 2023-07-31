@@ -3,6 +3,9 @@ package com.atakmap.android.ble_forwarder;
 
 import static android.content.Context.BLUETOOTH_SERVICE;
 
+import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
+
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -37,6 +40,7 @@ import android.widget.TextView;
 
 import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.ble_forwarder.plugin.R;
+import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
 import com.atakmap.android.ble_forwarder.util.BLEUtil;
 import com.atakmap.android.ble_forwarder.util.DateUtil;
 import com.atakmap.android.dropdown.DropDown;
@@ -80,7 +84,8 @@ import javax.xml.xpath.XPathFactory;
  * MainDropDownReceiver displays a menu containing information about the current missions,
  * as well as the next task and its due date, among other things
  */
-public class MainDropDownReceiver extends DropDownReceiver implements DropDown.OnStateListener {
+public class MainDropDownReceiver extends DropDownReceiver
+        implements DropDown.OnStateListener, CoTServerThread.NewCotCallback {
 
     public static final String TAG = MainDropDownReceiver.class.getSimpleName();
 
@@ -90,7 +95,6 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     private final MapView mapView;
     private final Context pluginContext;
 
-    ServerSocket serverSocket;
     Thread Thread1 = null;
     public static String SERVER_IP = "";
     public static final int SERVER_PORT = 8080;
@@ -114,17 +118,11 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
     public static final int SERVERPORT1 = 8089;
 
+    CoTServerThread cotServer = null;
     Thread cotServerThread = null;
     Thread httpServerThread = null;
     Thread cotdequeuerThread = null;
     Thread bleScannerThread = null;
-
-    String startDelimiterString = "<?xml version=\"1.0\"";
-    byte[] delimiter = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
-    String delimiterString = new String(delimiter, StandardCharsets.UTF_8);
-
-    boolean includeDelimiter = true;
-    boolean ignoreNewlineErrors = true;
 
     public static final String SERVER_STATUS_DOWN = "DOWN";
     public static final String SERVER_STATUS_UP = "UP";
@@ -144,7 +142,6 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
     public static Queue<String> newHttpQueue = new ArrayBlockingQueue<>(1000);
 
-    public static Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
     public static Queue<String> outgoingHttpQueue = new ArrayBlockingQueue<>(1000);
 
     public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
@@ -152,15 +149,13 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
     public static String lastCot = "";
 
-    private final static String TAK_RESPONSE_TYPE = "t-x-takp-r";
-    private final static String TAK_PING_TYPE = "t-x-c-t";
-    private final static int TIMEOUT_MILLIS = 60000;
-
     public static final int MAX_ATT_MTU = 517;
 
     public static final int READ_SIZE = 20;
 
     public static String receivedCot = "";
+
+    ServerSocket serverSocket = null;
 
     /**************************** CONSTRUCTOR *****************************/
 
@@ -278,7 +273,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
         Log.d(TAG, "Finished bluetooth related setup.");
 
-        this.cotServerThread = new Thread(new CoTServerThread(SERVERPORT1));
+        this.cotServer = new CoTServerThread(SERVERPORT1, this, peripheralLogMessages);
+        this.cotServerThread = new Thread(cotServer);
         this.cotServerThread.start();
         this.httpServerThread = new Thread(new HttpServerThread(8080));
         httpServerThread.start();
@@ -286,6 +282,13 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         this.cotdequeuerThread.start();
 
 
+    }
+
+    @Override
+    public void onNewCotReceived(String newCot) {
+        Log.d(TAG, "onNewCotReceived");
+        newCotQueue.add(newCot);
+        lastCot = newCot;
     }
 
     class PeripheralLogger implements Runnable {
@@ -447,7 +450,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                     for (int i = 0; i < lastCot.length(); i += READ_SIZE) {
                         try {
                             Thread.sleep(100);
-                        } catch (InterruptedException e) {                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                        } catch (InterruptedException e) {
+                            // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
                             // then that means we are getting data in the middle of a CoT that we didn't get the start of -
                             // just ignore all this data
                             peripheralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
@@ -465,132 +469,6 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                 }
             }
         }
-    }
-
-    class CoTServerThread implements Runnable {
-
-        private final String TAG = CoTServerThread.class.getSimpleName();
-
-        int port;
-
-        public CoTServerThread(int port) {
-            this.port = port;
-        }
-
-        public void run() {
-
-            Log.d(TAG, "Running server thread.");
-
-            Socket socket = null;
-            try {
-                serverSocket = new ServerSocket(port);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            Log.d(TAG, "Created server socket on port " + port);
-
-            try {
-
-                socket = serverSocket.accept();
-
-                Log.d(TAG, "Accepted server connection on port " + port);
-
-                BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
-
-                while (!Thread.currentThread().isInterrupted()) {
-
-                    // input processing
-
-                    //Log.d(TAG, "Trying to read string from connection...");
-                    try {
-                        byte[] msg = readMessage(in);
-                        if (msg != null) {
-                            String newCot = new String(msg, StandardCharsets.UTF_8);
-
-                            DocumentBuilderFactory factory =
-                                    DocumentBuilderFactory.newInstance();
-                            DocumentBuilder builder = factory.newDocumentBuilder();
-                            StringBuilder xmlStringBuilder = new StringBuilder();
-                            xmlStringBuilder.append(newCot);
-                            ByteArrayInputStream input =  new ByteArrayInputStream(
-                                    xmlStringBuilder.toString().getBytes("UTF-8"));
-                            Document doc = builder.parse(input);
-                            XPath xPath =  XPathFactory.newInstance().newXPath();
-                            String expression = "/event";
-                            NodeList nodeList = (NodeList) xPath.compile(expression).evaluate(
-                                    doc, XPathConstants.NODESET);
-                            String type = "";
-                            String uid = "";
-                            for (int i = 0; i < nodeList.getLength(); i++) {
-                                if (i == 0) {
-                                    Node n = nodeList.item(i);
-                                    Element e = (Element) n;
-                                    type = e.getAttribute("type");
-                                    //Log.d(TAG, "Got CoT with type: " + type);
-                                    uid = e.getAttribute("uid");
-                                    //Log.d(TAG, "Got uid for coT: " + uid);
-
-                                    if (type.equals(TAK_PING_TYPE)) {
-                                        long millis = System.currentTimeMillis();
-                                        String startAndTime = DateUtil.toCotTime(millis);
-                                        String stale = DateUtil.toCotTime(millis + TIMEOUT_MILLIS);
-
-                                        String response = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>" +
-                                                "<event version='2.0' uid='" + uid + "' type='" + TAK_RESPONSE_TYPE +"' time='"
-                                                + startAndTime + "' start='" + startAndTime + "' stale='" + stale + "' how='m-g'>" +
-                                                "<point lat='0.0' lon='0.0' hae='0.0' ce='999999' le='999999'/>" +
-                                                "<detail><TakControl><TakResponse status='" + true + "'/></TakControl></detail>" +
-                                                "</event>";
-
-                                        OutputStream os = socket.getOutputStream();
-                                        os.write(response.getBytes(StandardCharsets.UTF_8));
-                                    }
-
-                                }
-                            }
-
-                            if (!type.equals(TAK_PING_TYPE)) {
-                                newCotQueue.add(newCot);
-                                lastCot = newCot;
-                            }
-                            Log.d(TAG, "Read message from connection: " + newCot);
-
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "error reading message from input stream", e);
-                    }
-
-                    // output processing
-
-                    if (!outgoingCotQueue.isEmpty()) {
-                        OutputStream os = socket.getOutputStream();
-                        while (!outgoingCotQueue.isEmpty()) {
-                            String outgoingCot = outgoingCotQueue.poll();
-                            if (outgoingCot != null) {
-                                os.write(outgoingCot.getBytes(StandardCharsets.UTF_8));
-                                peripheralLogMessages.add("Wrote cot received over BLE to local ATAK.");
-                            }
-                        }
-                    }
-
-                    Thread.sleep(1000);
-                }
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                try {
-                    Log.d(TAG, "Closing server socket...");
-                    serverSocket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
     }
 
     class NewHttpDequeuer implements Runnable {
@@ -729,76 +607,6 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             }
         }
 
-    }
-
-    public byte[] readMessage(InputStream in) throws Exception {
-
-        ByteArrayOutputStream msgBuf = new ByteArrayOutputStream();
-        int msgByte; // current byte read from input stream
-        int dlmIndex = 0; // current byte in the delimiter
-        ByteArrayOutputStream dlmBuf = new ByteArrayOutputStream(); // stores the delimiter as we're reading it
-        // ByteArrayOutputStream msgBuf = new ByteArrayOutputStream(); // stores the message
-        boolean foundDelimiter = false;
-
-        while ((msgByte = in.read()) != -1) {  // throws IOException, blocks
-            /*if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Read: '" + (char) msgByte + "'");
-                LOGGER.debug("Read String: " + (char) msgByte + ", Hex: " + DatatypeConverter.printByte((byte) msgByte));
-            }*/
-
-            //** A rather odd hack. Suppose the byte -66 arrives as an integer in the range [0-255]
-            // like this: 00000000 00000000 00000000 10111110 (+190)
-            // I then cast it to a byte, which changes the interpretation to a negative number
-            // in two's complement: 10111110 (-66)
-            // I then cast it back to an int, which causes sign extension:
-            // 11111111 11111111 11111111 10111110 (-66)
-            msgByte = (byte) msgByte;
-
-            if (msgByte == this.delimiter[dlmIndex]) {
-                ++dlmIndex;
-                dlmBuf.write(msgByte);
-            } else {
-                dlmIndex = 0;
-                msgBuf.write(dlmBuf.toByteArray());
-                msgBuf.write(msgByte);
-                dlmBuf.reset();
-            }
-            if (Arrays.equals(dlmBuf.toByteArray(), this.delimiter)) {
-                foundDelimiter = true;
-                if (this.includeDelimiter) {
-                    msgBuf.write(dlmBuf.toByteArray()); // either dlmBuf or delimiter should be fine here.
-                }
-                break;
-            }
-        }
-
-        byte [] result = msgBuf.toByteArray();
-        if (!foundDelimiter && result.length == 0) {
-            return null;
-        } else if (!foundDelimiter) {
-            if (this.ignoreNewlineErrors && msgBuf.toByteArray().length == 1 && msgBuf.toByteArray()[0] == 10) {
-                // ** if we got just a single newline character and then closed the stream, don't interpret this as an error (if ignoreNewlineErrors==true)
-                return null;
-            }
-            // We hit the end of the stream without finding a delimiter.
-            // Considering this an error.
-            throw new Exception("No delimiter found. Message size: "
-                    + result.length + ", Message (hex): '" + bytesToHex(result) +  "'");
-        } else {
-            return result;
-        }
-
-    }
-
-    private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
-    public static String bytesToHex(byte[] bytes) {
-        char[] hexChars = new char[bytes.length * 2];
-        for (int j = 0; j < bytes.length; j++) {
-            int v = bytes[j] & 0xFF;
-            hexChars[j * 2] = HEX_ARRAY[v >>> 4];
-            hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
-        }
-        return new String(hexChars);
     }
 
     /**
@@ -1145,9 +953,9 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
             // TODO: This needs to be modified to read both HTTP and CoT's
 
-            if (receivedValue.startsWith(startDelimiterString)) {
+            if (receivedValue.startsWith(START_DELIMITER_STRING)) {
                 peripheralLogMessages.add("Got start of CoT.");
-                receivedCot = startDelimiterString + " ";
+                receivedCot = START_DELIMITER_STRING + " ";
             } else {
                 if (receivedCot.equals("")) {
                     // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
@@ -1161,9 +969,9 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
                     receivedCot += receivedValue;
 
-                    if (receivedCot.startsWith(startDelimiterString) && receivedCot.endsWith(delimiterString)) {
+                    if (receivedCot.startsWith(START_DELIMITER_STRING) && receivedCot.endsWith(DELIMITER_STRING)) {
                         peripheralLogMessages.add("Received full cot: " + receivedCot);
-                        outgoingCotQueue.add(new String(receivedCot));
+                        cotServer.addNewOutgoingCot(receivedCot);
                         receivedCot = "";
                         //peripheralLogMessages.add("TODO: send CoT to ATAK");
                     }
