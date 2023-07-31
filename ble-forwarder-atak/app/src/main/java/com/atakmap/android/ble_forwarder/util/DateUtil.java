@@ -5,10 +5,21 @@ import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.TimeZone;
+
 public class DateUtil {
     protected static final ThreadLocal<DateTimeFormatter> cotDateParser = new ThreadLocal<>();
     protected static final ThreadLocal<DateTimeFormatter> cotDateParserMillis = new ThreadLocal<>();
     protected static final ThreadLocal<DateTimeFormatter> iso = new ThreadLocal<>();
+
+    public static String formatHttpDate(long timestamp) {
+        Date date = new Date(timestamp);
+        SimpleDateFormat dateFormat = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z");
+        dateFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
+        return dateFormat.format(date);
+    }
 
     private static DateTimeFormatter cotDateParser() {
         if (cotDateParser.get() == null) {

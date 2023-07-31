@@ -92,7 +92,7 @@ def modApk(skew) {
             apkFiles.forEach {
                 def originalApkPath = new File(file(packageTaskResolved.outputDirectory), it)
                 def moddedApkPath = new File(rootTmpDir, it)
-                def moddedApkPathUnaligned = new File(moddedApkPath.toString() + ".unalign");
+                def moddedApkPathUnaligned = new File(moddedApkPath.toString() + ".unalign")
 
                 println "creating apk with modded AndroidManifest.xml from: $originalApkPath to: $moddedApkPath"
 

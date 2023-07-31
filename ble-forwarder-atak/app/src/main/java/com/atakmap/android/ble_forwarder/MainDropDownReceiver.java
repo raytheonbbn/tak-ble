@@ -32,6 +32,7 @@ import android.os.Looper;
 import android.os.ParcelUuid;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.atak.plugins.impl.PluginLayoutInflater;
@@ -50,10 +51,12 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -102,12 +105,17 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     public TextView connectionStatusTextView;
     public Button startScanButton;
     public Button disconnectButton;
+    public Button peripheralLogsButton;
+    public Button centralLogsButton;
+    public ScrollView peripheralLogsScrollView;
+    public ScrollView centralLogsScrollView;
 
     Handler handler;
 
     public static final int SERVERPORT1 = 8089;
 
-    Thread serverThread = null;
+    Thread cotServerThread = null;
+    Thread httpServerThread = null;
     Thread cotdequeuerThread = null;
     Thread bleScannerThread = null;
 
@@ -132,10 +140,15 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
     private BluetoothGatt mBluetoothGatt;
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
+
     public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
+    public static Queue<String> newHttpQueue = new ArrayBlockingQueue<>(1000);
+
+    public static Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
+    public static Queue<String> outgoingHttpQueue = new ArrayBlockingQueue<>(1000);
+
     public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
     public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
-    public static Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
 
     public static String lastCot = "";
 
@@ -188,6 +201,38 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
             }
         });
 
+        peripheralLogsButton = templateView.findViewById(R.id.peripheralLogsButton);
+        peripheralLogsButton.setText("Hide Peripheral Logs");
+        peripheralLogsScrollView = templateView.findViewById(R.id.peripheralLogsScrollView);
+        peripheralLogsButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (peripheralLogsScrollView.getVisibility() == View.VISIBLE) {
+                    peripheralLogsButton.setText("Show Peripheral Logs");
+                    peripheralLogsScrollView.setVisibility(View.INVISIBLE);
+                } else {
+                    peripheralLogsButton.setText("Hide Peripheral Logs");
+                    peripheralLogsScrollView.setVisibility(View.VISIBLE);
+                }
+            }
+        });
+
+        centralLogsButton = templateView.findViewById(R.id.centralLogsButton);
+        centralLogsButton.setText("Hide Central Logs");
+        centralLogsScrollView = templateView.findViewById(R.id.centralLogsScrollView);
+        centralLogsButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (centralLogsScrollView.getVisibility() == View.VISIBLE) {
+                    centralLogsButton.setText("Show Central Logs");
+                    centralLogsScrollView.setVisibility(View.INVISIBLE);
+                } else {
+                    centralLogsButton.setText("Hide Central Logs");
+                    centralLogsScrollView.setVisibility(View.VISIBLE);
+                }
+            }
+        });
+
         serverStatusTextView = templateView.findViewById(R.id.serverStatus);
         serverStatusTextView.setText(SERVER_STATUS_DOWN);
         serverStatusTextView.setTextColor(Color.RED);
@@ -233,10 +278,14 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
         Log.d(TAG, "Finished bluetooth related setup.");
 
-        this.serverThread = new Thread(new ServerThread(SERVERPORT1));
-        this.serverThread.start();
+        this.cotServerThread = new Thread(new CoTServerThread(SERVERPORT1));
+        this.cotServerThread.start();
+        this.httpServerThread = new Thread(new HttpServerThread(8080));
+        httpServerThread.start();
         this.cotdequeuerThread = new Thread(new NewCotDequeuer());
         this.cotdequeuerThread.start();
+
+
     }
 
     class PeripheralLogger implements Runnable {
@@ -418,11 +467,13 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
         }
     }
 
-    class ServerThread implements Runnable {
+    class CoTServerThread implements Runnable {
+
+        private final String TAG = CoTServerThread.class.getSimpleName();
 
         int port;
 
-        public ServerThread(int port) {
+        public CoTServerThread(int port) {
             this.port = port;
         }
 
@@ -451,7 +502,7 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
                     // input processing
 
-                    Log.d(TAG, "Trying to read string from connection...");
+                    //Log.d(TAG, "Trying to read string from connection...");
                     try {
                         byte[] msg = readMessage(in);
                         if (msg != null) {
@@ -476,9 +527,9 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                                     Node n = nodeList.item(i);
                                     Element e = (Element) n;
                                     type = e.getAttribute("type");
-                                    Log.d(TAG, "Got CoT with type: " + type);
+                                    //Log.d(TAG, "Got CoT with type: " + type);
                                     uid = e.getAttribute("uid");
-                                    Log.d(TAG, "Got uid for coT: " + uid);
+                                    //Log.d(TAG, "Got uid for coT: " + uid);
 
                                     if (type.equals(TAK_PING_TYPE)) {
                                         long millis = System.currentTimeMillis();
@@ -519,6 +570,144 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
                             if (outgoingCot != null) {
                                 os.write(outgoingCot.getBytes(StandardCharsets.UTF_8));
                                 peripheralLogMessages.add("Wrote cot received over BLE to local ATAK.");
+                            }
+                        }
+                    }
+
+                    Thread.sleep(1000);
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    Log.d(TAG, "Closing server socket...");
+                    serverSocket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+    }
+
+    class NewHttpDequeuer implements Runnable {
+
+        @Override
+        public void run() {
+            while (true) {
+                String newHttp = newHttpQueue.poll();
+                if (newHttp != null) {
+                    centralLogMessages.add("Got new http string from local ATAK");
+                    Log.d(TAG, "dequeuing new http string: " + newHttp);
+                    for (int i = 0; i < lastCot.length(); i += READ_SIZE) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                            // then that means we are getting data in the middle of a CoT that we didn't get the start of -
+                            // just ignore all this data
+                            peripheralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
+
+                            Log.e(TAG, "interrupted", e);
+                        }
+                        int lastIndex = i + READ_SIZE;
+                        if (lastIndex > lastCot.length()) {
+                            lastIndex = lastCot.length();
+                        }
+                        notifyRegisteredDevices(lastCot.substring(i, lastIndex));
+
+                    }
+
+                }
+            }
+        }
+    }
+
+    class HttpServerThread implements Runnable {
+
+        private final String TAG = HttpServerThread.class.getSimpleName();
+
+        int port;
+
+        public HttpServerThread(int port) {
+            this.port = port;
+        }
+
+        public void run() {
+
+            Log.d(TAG, "Running http server thread.");
+
+            Socket socket = null;
+            try {
+                serverSocket = new ServerSocket(port);
+            } catch (IOException e) {
+                e.printStackTrace();
+                return;
+            }
+
+            Log.d(TAG, "Created server socket on port " + port);
+
+            try {
+
+                socket = serverSocket.accept();
+
+                Log.d(TAG, "Accepted server connection on port " + port);
+
+                BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
+
+                while (!Thread.currentThread().isInterrupted()) {
+
+                    // input processing
+
+                    //Log.d(TAG, "Trying to read string from connection...");
+                    try {
+                        BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+                        StringBuilder result = new StringBuilder();
+                        String line;
+                        while((line = reader.readLine()) != null) {
+                            result.append(line);
+                        }
+                        if (!result.toString().isEmpty()) {
+                            Log.d(TAG, "Read string from http connection: " + result.toString());
+                            if (result.toString().startsWith("GET /Marti/api/clientEndPoints")) {
+                                outgoingHttpQueue.add(
+                                        "HTTP/1.1 200 OK" + "\r\n" +
+                                        "Date: " + DateUtil.formatHttpDate(System.currentTimeMillis()) + "\r\n" +
+                                        "Content-Type: application/json; charset=utf-8" + "\r\n" +
+                                        "Keep-Alive: " + "timeout=60" + "\r\n" +
+                                        "Transfer-Encoding: " + "chunked" + "\r\n" +
+                                        "Connection: " + "keep-alive" + "\r\n" +
+                                        "\r\n" +
+                                        "{\"version\":\"3\",\"type\":\"com.bbn.marti.remote.ClientEndpoint\",\"data\":[]," +
+                                                "\"nodeId\":\"e6ec3550334a41aeb08b06e9578ea212\"}" + "\r\n\r\n");
+                            } else if (result.toString().startsWith("GET /Marti/api/version/config")) {
+                                outgoingHttpQueue.add(
+                                        "HTTP/1.1 200 OK" + "\r\n" +
+                                        "Date: " + DateUtil.formatHttpDate(System.currentTimeMillis()) + "\r\n" +
+                                        "Content-Type: application/json; charset=utf-8" + "\r\n" +
+                                        "Keep-Alive: " + "timeout=60" + "\r\n" +
+                                        "Transfer-Encoding: " + "chunked" + "\r\n" +
+                                        "Connection: " + "keep-alive" + "\r\n" +
+                                        "\r\n" +
+                                        "{\"version\":\"3\",\"type\":\"ServerConfig\",\"data\":{\"version\":\"4.5.38-RELEASE\",\"api\":\"3\"," +
+                                                "\"hostname\":\"localhost\"},\"nodeId\":\"e6ec3550334a41aeb08b06e9578ea212\"}" + "\r\n\r\n");
+                            }
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "error reading message from input stream", e);
+                    }
+
+                    // output processing
+
+                    if (!outgoingHttpQueue.isEmpty()) {
+                        OutputStream os = socket.getOutputStream();
+                        while (!outgoingHttpQueue.isEmpty()) {
+                            String outgoingHttp = outgoingHttpQueue.poll();
+                            if (outgoingHttp != null) {
+                                os.write(outgoingHttp.getBytes(StandardCharsets.UTF_8));
+                                peripheralLogMessages.add("Wrote HTTP received over BLE to local ATAK: " + outgoingHttp);
                             }
                         }
                     }
@@ -953,6 +1142,8 @@ public class MainDropDownReceiver extends DropDownReceiver implements DropDown.O
 
             //.add("Got notified of new value for characteristic with uuid " + characteristic.getUuid());
             //peripheralLogMessages.add("Got characteristic value: " + receivedValue);
+
+            // TODO: This needs to be modified to read both HTTP and CoT's
 
             if (receivedValue.startsWith(startDelimiterString)) {
                 peripheralLogMessages.add("Got start of CoT.");
