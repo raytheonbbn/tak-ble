@@ -42,29 +42,14 @@ import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.ble_forwarder.plugin.R;
 import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.HttpServerThread;
+import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
 import com.atakmap.android.ble_forwarder.util.BLEUtil;
-import com.atakmap.android.ble_forwarder.util.DateUtil;
 import com.atakmap.android.dropdown.DropDown;
 import com.atakmap.android.dropdown.DropDownReceiver;
 import com.atakmap.android.ipc.AtakBroadcast;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.log.Log;
 
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -75,31 +60,19 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.xpath.XPath;
-import javax.xml.xpath.XPathConstants;
-import javax.xml.xpath.XPathFactory;
-
 /**
  * MainDropDownReceiver displays a menu containing information about the current missions,
  * as well as the next task and its due date, among other things
  */
 public class MainDropDownReceiver extends DropDownReceiver
-        implements DropDown.OnStateListener, CoTServerThread.NewCotCallback {
+        implements DropDown.OnStateListener, CoTServerThread.NewCotCallback,
+        NewCotDequeuer.NewCotDequeuedCallback {
 
     public static final String TAG = MainDropDownReceiver.class.getSimpleName();
 
     public static final String SHOW_PLUGIN = MainDropDownReceiver.class.getSimpleName() + "SHOW_PLUGIN";
     public static final String REFRESH_MAIN_SCREEN = MainDropDownReceiver.class.getSimpleName() + "REFRESH_MAIN_SCREEN";
     private final View templateView;
-    private final MapView mapView;
-    private final Context pluginContext;
-
-    Thread Thread1 = null;
-    public static String SERVER_IP = "";
-    public static final int SERVER_PORT = 8080;
-    String message;
 
     Thread peripheralLoggerThread = null;
     Thread centralLoggerThread = null;
@@ -117,13 +90,11 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     Handler handler;
 
-    public static final int SERVERPORT1 = 8089;
-
-    CoTServerThread cotServer = null;
-    Thread cotServerThread = null;
-    Thread httpServerThread = null;
-    Thread cotdequeuerThread = null;
-    Thread bleScannerThread = null;
+    private CoTServerThread cotServer = null;
+    private Thread cotServerThread = null;
+    private Thread httpServerThread = null;
+    private Thread cotdequeuerThread = null;
+    private Thread bleScannerThread = null;
 
     public static final String SERVER_STATUS_DOWN = "DOWN";
     public static final String SERVER_STATUS_UP = "UP";
@@ -146,12 +117,6 @@ public class MainDropDownReceiver extends DropDownReceiver
     public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
     public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
 
-    public static String lastCot = "";
-
-    public static final int MAX_ATT_MTU = 517;
-
-    public static final int READ_SIZE = 20;
-
     public static String receivedCot = "";
 
     /**************************** CONSTRUCTOR *****************************/
@@ -160,12 +125,7 @@ public class MainDropDownReceiver extends DropDownReceiver
     public MainDropDownReceiver(final MapView mapView,
                                 final Context context) {
         super(mapView);
-        this.pluginContext = context;
-        this.mapView = mapView;
 
-        // Remember to use the PluginLayoutInflator if you are actually inflating a custom view
-        // In this case, using it is not necessary - but I am putting it here to remind
-        // developers to look at this Inflator
         templateView = PluginLayoutInflater.inflate(context,
                 R.layout.main_layout, null);
 
@@ -270,14 +230,20 @@ public class MainDropDownReceiver extends DropDownReceiver
 
         Log.d(TAG, "Finished bluetooth related setup.");
 
-        this.cotServer = new CoTServerThread(SERVERPORT1, this, peripheralLogMessages);
+        this.cotServer = new CoTServerThread(8089, this, peripheralLogMessages);
         this.cotServerThread = new Thread(cotServer);
         this.cotServerThread.start();
         this.httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
         httpServerThread.start();
-        this.cotdequeuerThread = new Thread(new NewCotDequeuer());
+        this.cotdequeuerThread = new Thread(
+                new NewCotDequeuer(
+                        this,
+                        newCotQueue,
+                        centralLogMessages,
+                        peripheralLogMessages
+                )
+        );
         this.cotdequeuerThread.start();
-
 
     }
 
@@ -285,7 +251,11 @@ public class MainDropDownReceiver extends DropDownReceiver
     public void onNewCotReceived(String newCot) {
         Log.d(TAG, "onNewCotReceived");
         newCotQueue.add(newCot);
-        lastCot = newCot;
+    }
+
+    @Override
+    public void newCotSubstringDequeued(String newCotSubstring) {
+        notifyRegisteredDevices(newCotSubstring);
     }
 
     class PeripheralLogger implements Runnable {
@@ -390,25 +360,11 @@ public class MainDropDownReceiver extends DropDownReceiver
             }
         };
 
-        UUID[] serviceUUIDsToScan = new UUID[] { TimeProfile.TIME_SERVICE };
-
         @SuppressLint("MissingPermission")
         @Override
         public void run() {
             Log.d(TAG, "Starting scan for ble devices");
             peripheralLogMessages.add("Starting scan for BLE devices...");
-
-//            List<ScanFilter> filters = new ArrayList<>();
-//            for (UUID uuid : serviceUUIDsToScan) {
-//                filters.add(new ScanFilter.Builder().setServiceUuid(new ParcelUuid(uuid)).build());
-//            }
-//
-//            ScanSettings settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build();
-//
-//            // ScanFilter doesn't work with startScan() if there are too many - more than 63bits - ignore
-//            // bits. So we call startScan() without a scan filter for base/mask uuids and match scan results
-//            // against it.
-//            final ScanFilter matcher = new ScanFilter.Builder().setServiceUuid(mScanBaseUuid, mScanMaskUuid).build();
 
             mBluetoothScanner.startScan(leScanCallback);
 
@@ -433,71 +389,6 @@ public class MainDropDownReceiver extends DropDownReceiver
 
         }
 
-    }
-
-    class NewCotDequeuer implements Runnable {
-
-        @Override
-        public void run() {
-            while (true) {
-                String newCot = newCotQueue.poll();
-                if (newCot != null) {
-                    centralLogMessages.add("Got new cot from local ATAK");
-                    Log.d(TAG, "dequeuing new cot: " + newCot);
-                    for (int i = 0; i < lastCot.length(); i += READ_SIZE) {
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
-                            // then that means we are getting data in the middle of a CoT that we didn't get the start of -
-                            // just ignore all this data
-                            peripheralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
-
-                            Log.e(TAG, "interrupted", e);
-                        }
-                        int lastIndex = i + READ_SIZE;
-                        if (lastIndex > lastCot.length()) {
-                            lastIndex = lastCot.length();
-                        }
-                        notifyRegisteredDevices(lastCot.substring(i, lastIndex));
-
-                    }
-
-                }
-            }
-        }
-    }
-
-    class NewHttpDequeuer implements Runnable {
-
-        @Override
-        public void run() {
-            while (true) {
-                String newHttp = newHttpQueue.poll();
-                if (newHttp != null) {
-                    centralLogMessages.add("Got new http string from local ATAK");
-                    Log.d(TAG, "dequeuing new http string: " + newHttp);
-                    for (int i = 0; i < lastCot.length(); i += READ_SIZE) {
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
-                            // then that means we are getting data in the middle of a CoT that we didn't get the start of -
-                            // just ignore all this data
-                            peripheralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
-
-                            Log.e(TAG, "interrupted", e);
-                        }
-                        int lastIndex = i + READ_SIZE;
-                        if (lastIndex > lastCot.length()) {
-                            lastIndex = lastCot.length();
-                        }
-                        notifyRegisteredDevices(lastCot.substring(i, lastIndex));
-
-                    }
-
-                }
-            }
-        }
     }
 
     /**
@@ -716,40 +607,7 @@ public class MainDropDownReceiver extends DropDownReceiver
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset,
                                                 BluetoothGattCharacteristic characteristic) {
             long now = System.currentTimeMillis();
-            if (TimeProfile.CURRENT_TIME.equals(characteristic.getUuid())) {
-//                centralLogMessages.add("Got characteristic read request for current time.");
-//                Log.i(TAG, "Read CurrentTime");
-//                mBluetoothGattServer.sendResponse(device,
-//                        requestId,
-//                        BluetoothGatt.GATT_SUCCESS,
-//                        0,
-//                        lastCot.getBytes(StandardCharsets.UTF_8));
-//                super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
-//                Log.i(TAG, "onCharacteristicReadRequest " + characteristic.getUuid().toString());
-
-//
-//                byte[] fullValue = lastCot.getBytes(StandardCharsets.UTF_8);
-//                centralLogMessages.add("Length of lastCot: " + fullValue.length);
-//
-//                //check
-//                if (offset > fullValue.length) {
-//                    mBluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{0} );
-//                    centralLogMessages.add("Returning response for offset read greater than length of lastCot");
-//                    return;
-//
-//                }
-//
-//                int size = fullValue.length - offset;
-//                byte[] response = new byte[size];
-//
-//                for (int i = offset; i < fullValue.length; i++) {
-//                    response[i - offset] = fullValue[i];
-//                }
-//
-//                centralLogMessages.add("Sending response for read from offset " + offset);
-//                mBluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, response);
-
-            } else if (TimeProfile.LOCAL_TIME_INFO.equals(characteristic.getUuid())) {
+            if (TimeProfile.LOCAL_TIME_INFO.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read LocalTimeInfo");
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
@@ -917,9 +775,6 @@ public class MainDropDownReceiver extends DropDownReceiver
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
 
-                //gatt.requestMtu(MAX_ATT_MTU);
-
-                // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
                 peripheralLogMessages.add("Discovered services for connected device.");
                 List<UUID> serviceUUIDs = new ArrayList<>();
                 for (BluetoothGattService service : mBluetoothGatt.getServices()) {
@@ -930,7 +785,6 @@ public class MainDropDownReceiver extends DropDownReceiver
                         BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);
                         if (characteristic != null) {
                             peripheralLogMessages.add("Found data transfer characteristic, trying to subscribe to notifications...");
-//                        mBluetoothGatt.readCharacteristic(characteristic);
                             characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
                             mBluetoothGatt.setCharacteristicNotification(characteristic, true);
                             // 0x2902 org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
@@ -961,13 +815,6 @@ public class MainDropDownReceiver extends DropDownReceiver
                 Log.d(TAG, "Got value: " + characteristic.getStringValue(0));
             }
         }
-
-//        @Override
-//        public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
-//            if (status == BluetoothGatt.GATT_SUCCESS) {
-//                peripheralLogMessages.add("Successfully negotiated mtu of " + MAX_ATT_MTU);
-//            }
-//        }
     };
 
 }
