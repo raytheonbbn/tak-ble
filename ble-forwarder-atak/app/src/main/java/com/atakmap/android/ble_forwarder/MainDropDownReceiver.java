@@ -93,6 +93,7 @@ public class MainDropDownReceiver extends DropDownReceiver
     private CoTServerThread cotServer = null;
     private Thread cotServerThread = null;
     private Thread httpServerThread = null;
+    private NewCotDequeuer newCotDequeuer = null;
     private Thread cotdequeuerThread = null;
     private Thread bleScannerThread = null;
 
@@ -111,7 +112,6 @@ public class MainDropDownReceiver extends DropDownReceiver
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
 
-    public static Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
     public static Queue<String> newHttpQueue = new ArrayBlockingQueue<>(1000);
 
     public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
@@ -235,14 +235,12 @@ public class MainDropDownReceiver extends DropDownReceiver
         this.cotServerThread.start();
         this.httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
         httpServerThread.start();
-        this.cotdequeuerThread = new Thread(
-                new NewCotDequeuer(
-                        this,
-                        newCotQueue,
-                        centralLogMessages,
-                        peripheralLogMessages
-                )
+        newCotDequeuer = new NewCotDequeuer(
+                this,
+                centralLogMessages,
+                peripheralLogMessages
         );
+        this.cotdequeuerThread = new Thread(newCotDequeuer);
         this.cotdequeuerThread.start();
 
     }
@@ -250,7 +248,7 @@ public class MainDropDownReceiver extends DropDownReceiver
     @Override
     public void onNewCotReceived(String newCot) {
         Log.d(TAG, "onNewCotReceived");
-        newCotQueue.add(newCot);
+        newCotDequeuer.addNewCotToQueue(newCot);
     }
 
     @Override

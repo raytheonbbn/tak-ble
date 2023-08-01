@@ -3,6 +3,7 @@ package com.atakmap.android.ble_forwarder.takserver_facade;
 import com.atakmap.coremap.log.Log;
 
 import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
 
 public class NewCotDequeuer implements Runnable {
 
@@ -17,16 +18,18 @@ public class NewCotDequeuer implements Runnable {
     Queue<String> centralLogMessages;
     Queue<String> peripheralLogMessages;
     NewCotDequeuedCallback callback;
-    Queue<String> newCotQueue;
+    Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
 
     public NewCotDequeuer(NewCotDequeuedCallback callback,
-                          Queue<String> newCotQueue,
                           Queue<String> centralLogMessages,
                           Queue<String> peripheralLogMessages) {
         this.callback = callback;
-        this.newCotQueue = newCotQueue;
         this.centralLogMessages = centralLogMessages;
         this.peripheralLogMessages = peripheralLogMessages;
+    }
+
+    public void addNewCotToQueue(String newCot) {
+        newCotQueue.add(newCot);
     }
 
     @Override
