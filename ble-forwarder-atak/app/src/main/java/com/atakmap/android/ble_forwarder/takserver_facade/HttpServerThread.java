@@ -35,7 +35,7 @@ public class HttpServerThread implements Runnable {
 
         Log.d(TAG, "Running http server thread.");
 
-        Socket socket = null;
+        Socket socket;
         try {
             serverSocket = new ServerSocket(port);
         } catch (IOException e) {
@@ -111,9 +111,7 @@ public class HttpServerThread implements Runnable {
                 Thread.sleep(1000);
             }
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         } finally {
             try {

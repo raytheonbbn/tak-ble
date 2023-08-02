@@ -84,8 +84,6 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
 
     public static Context pluginContext;
 
-    private MainDropDownReceiver mainDdr = null;
-
     @SuppressLint("MissingPermission")
     public void onCreate(final Context context, Intent intent,
                          final MapView view) {
@@ -98,13 +96,12 @@ public class BleForwarderMapComponent extends DropDownMapComponent {
         super.onCreate(context, intent, view);
         pluginContext = context;
 
-        mainDdr = new MainDropDownReceiver(view, context);
+        MainDropDownReceiver mainDdr = new MainDropDownReceiver(view, context);
 
         DocumentedIntentFilter ddFilterMain = new DocumentedIntentFilter();
         ddFilterMain.addAction(MainDropDownReceiver.SHOW_PLUGIN);
         ddFilterMain.addAction(MainDropDownReceiver.REFRESH_MAIN_SCREEN);
         registerDropDownReceiver(mainDdr, ddFilterMain);
-
 
     }
 

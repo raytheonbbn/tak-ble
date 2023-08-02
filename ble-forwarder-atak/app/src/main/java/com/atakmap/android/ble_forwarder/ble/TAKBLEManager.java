@@ -1,8 +1,6 @@
 package com.atakmap.android.ble_forwarder.ble;
 
 import static android.content.Context.BLUETOOTH_SERVICE;
-import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
-import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
@@ -36,7 +34,6 @@ import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.log.Log;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -70,9 +67,9 @@ public class TAKBLEManager {
         void receivedStringOverBLE(String receivedValue);
     }
 
-    Queue<String> peripheralLogMessages = null;
-    Queue<String> centralLogMessages = null;
-    TAKBLEManagerCallbacks callbacks = null;
+    Queue<String> peripheralLogMessages;
+    Queue<String> centralLogMessages;
+    TAKBLEManagerCallbacks callbacks;
 
     public TAKBLEManager(Queue<String> peripheralLogMessages, Queue<String> centralLogMessages,
                          TAKBLEManagerCallbacks callbacks) {
@@ -88,9 +85,7 @@ public class TAKBLEManager {
     private BluetoothLeScanner mBluetoothScanner;
     private BluetoothGatt mBluetoothGatt;
     /* Collection of notification subscribers */
-    private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
-
-    private Thread bleScannerThread = null;
+    private final Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
 
     @SuppressLint("MissingPermission")
     public boolean initialize() {
@@ -134,7 +129,7 @@ public class TAKBLEManager {
     }
 
     public void startScanning() {
-        bleScannerThread = new Thread(new BLEScanner());
+        Thread bleScannerThread = new Thread(new BLEScanner());
         bleScannerThread.start();
     }
 
@@ -213,7 +208,7 @@ public class TAKBLEManager {
      * Listens for Bluetooth adapter events to enable/disable
      * advertising and server functionality.
      */
-    private BroadcastReceiver mBluetoothReceiver = new BroadcastReceiver() {
+    private final BroadcastReceiver mBluetoothReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.STATE_OFF);
@@ -312,7 +307,7 @@ public class TAKBLEManager {
     /**
      * Callback to receive information about the advertisement process.
      */
-    private AdvertiseCallback mAdvertiseCallback = new AdvertiseCallback() {
+    private final AdvertiseCallback mAdvertiseCallback = new AdvertiseCallback() {
         @Override
         public void onStartSuccess(AdvertiseSettings settingsInEffect) {
             Log.i(TAG, "LE Advertise Started.");
@@ -354,7 +349,7 @@ public class TAKBLEManager {
      * Callback to handle incoming requests to the GATT server.
      * All read/write requests for characteristics and descriptors are handled here.
      */
-    private BluetoothGattServerCallback mGattServerCallback = new BluetoothGattServerCallback() {
+    private final BluetoothGattServerCallback mGattServerCallback = new BluetoothGattServerCallback() {
 
         @SuppressLint("MissingPermission")
         @Override
@@ -506,10 +501,8 @@ public class TAKBLEManager {
             if (status == BluetoothGatt.GATT_SUCCESS) {
 
                 peripheralLogMessages.add("Discovered services for connected device.");
-                List<UUID> serviceUUIDs = new ArrayList<>();
                 for (BluetoothGattService service : mBluetoothGatt.getServices()) {
                     peripheralLogMessages.add("Got service with uuid " + service.getUuid());
-                    serviceUUIDs.add(service.getUuid());
                     if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
                         peripheralLogMessages.add("Found data transfer service, trying to read data...");
                         BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);

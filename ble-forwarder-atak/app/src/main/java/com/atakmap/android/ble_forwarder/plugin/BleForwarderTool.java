@@ -18,6 +18,7 @@ import transapps.maps.plugin.tool.Tool;
 import transapps.maps.plugin.tool.ToolDescriptor;
 
 public class BleForwarderTool extends Tool implements ToolDescriptor {
+
     private static final String TAG = BleForwarderTool.class.getSimpleName();
     private final Context context;
 

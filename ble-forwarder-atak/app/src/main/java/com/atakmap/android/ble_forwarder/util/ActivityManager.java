@@ -4,7 +4,6 @@ import android.app.Activity;
 
 /**todo move to atakUtils*/
 
-
 public class ActivityManager {
     private static ActivityManager instance = null;
     private Activity activity;

@@ -4,47 +4,27 @@ package com.atakmap.android.ble_forwarder.plugin;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
-import android.os.Bundle;
 
-import com.atakmap.android.atakutils.MapItems;
 import com.atakmap.android.ble_forwarder.BleForwarderMapComponent;
 import com.atakmap.android.ble_forwarder.util.ActivityManager;
 import com.atakmap.android.maps.MapComponent;
-import com.atakmap.android.maps.MapEvent;
-import com.atakmap.android.maps.MapGroup;
-import com.atakmap.android.maps.MapItem;
 import com.atakmap.android.maps.MapView;
-import com.atakmap.comms.CommsMapComponent;
-import com.atakmap.comms.CotServiceRemote;
-import com.atakmap.coremap.cot.event.CotDetail;
-import com.atakmap.coremap.cot.event.CotEvent;
 import com.atakmap.coremap.log.Log;
-import com.bbn.atak.triggeraction.action.ActionExecutionException;
-import com.bbn.atak.triggeraction.action.ActionExecutor;
-import com.bbn.atak.triggeraction.action.ActionInitException;
-import com.bbn.atak.triggeraction.action.ActionNotFoundException;
-import com.bbn.atak.triggeraction.action.actions.PopupAction;
-import com.bbn.atak.triggeraction.action.actions.SMSAction;
-import com.bbn.atak.triggeraction.action.actions.VibrateAction;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
 
 import transapps.maps.plugin.lifecycle.Lifecycle;
 
 public class BleForwarderLifecycle implements Lifecycle {
-    private static final String POPUP_ACTION = "popupAction";
+
     private final Context pluginContext;
     private final Collection<MapComponent> overlays;
     private MapView mapView;
     private static Activity atakActivity;
-    private final static String TAG = "DinoLifecycle";
-    private ActionExecutor executor;
-    private boolean isAtakClosing = false;
+    private final static String TAG = BleForwarderLifecycle.class.getSimpleName();
+
     public BleForwarderLifecycle(Context ctx) {
         this.pluginContext = ctx;
         this.overlays = new LinkedList<>();
@@ -96,7 +76,6 @@ public class BleForwarderLifecycle implements Lifecycle {
     @Override
     public void onDestroy() {
         Log.d(TAG, "ON DESTROY");
-        isAtakClosing = true;
         for (MapComponent c : this.overlays)
             c.onDestroy(this.pluginContext, this.mapView);
     }

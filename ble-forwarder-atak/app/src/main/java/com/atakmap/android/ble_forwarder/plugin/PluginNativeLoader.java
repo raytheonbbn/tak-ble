@@ -3,8 +3,6 @@ package com.atakmap.android.ble_forwarder.plugin;
 
 import android.content.Context;
 
-import java.io.File;
-
 /**
  * Boilerplate code for loading native.
  */

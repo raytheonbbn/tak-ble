@@ -3,4 +3,8 @@
     <!-- App -->
     <string name="app_name">TAK BLE</string>
     <string name="app_desc">ATAK Plugin to forward ATAK data over BLE</string>
+    <string name="hide_peripheral_logs">Hide Peripheral Logs</string>
+    <string name="show_peripheral_logs">Show Peripheral Logs</string>
+    <string name="hide_central_logs">Hide Central Logs</string>
+    <string name="show_central_logs">Show Central Logs</string>
 </resources>

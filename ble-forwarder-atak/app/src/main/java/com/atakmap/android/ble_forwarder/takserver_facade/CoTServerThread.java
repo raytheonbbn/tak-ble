@@ -1,7 +1,5 @@
 package com.atakmap.android.ble_forwarder.takserver_facade;
 
-import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER;
-
 import com.atakmap.android.ble_forwarder.util.CotUtils;
 import com.atakmap.android.ble_forwarder.util.DateUtil;
 import com.atakmap.coremap.log.Log;
@@ -13,14 +11,11 @@ import org.w3c.dom.NodeList;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 
@@ -46,7 +41,7 @@ public class CoTServerThread implements Runnable {
     private final static String TAK_PING_TYPE = "t-x-c-t";
     private final static int TIMEOUT_MILLIS = 60000;
 
-    public Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);;
+    public Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
     public Queue<String> peripheralLogMessages;
 
     NewCotCallback newCotCallback;
@@ -67,7 +62,7 @@ public class CoTServerThread implements Runnable {
 
         Log.d(TAG, "Running server thread.");
 
-        Socket socket = null;
+        Socket socket;
         try {
             serverSocket = new ServerSocket(port);
         } catch (IOException e) {
@@ -97,17 +92,15 @@ public class CoTServerThread implements Runnable {
                         DocumentBuilderFactory factory =
                                 DocumentBuilderFactory.newInstance();
                         DocumentBuilder builder = factory.newDocumentBuilder();
-                        StringBuilder xmlStringBuilder = new StringBuilder();
-                        xmlStringBuilder.append(newCot);
                         ByteArrayInputStream input =  new ByteArrayInputStream(
-                                xmlStringBuilder.toString().getBytes("UTF-8"));
+                                newCot.getBytes(StandardCharsets.UTF_8));
                         Document doc = builder.parse(input);
                         XPath xPath =  XPathFactory.newInstance().newXPath();
                         String expression = "/event";
                         NodeList nodeList = (NodeList) xPath.compile(expression).evaluate(
                                 doc, XPathConstants.NODESET);
                         String type = "";
-                        String uid = "";
+                        String uid;
                         for (int i = 0; i < nodeList.getLength(); i++) {
                             if (i == 0) {
                                 Node n = nodeList.item(i);
@@ -162,9 +155,7 @@ public class CoTServerThread implements Runnable {
                 Thread.sleep(1000);
             }
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         } finally {
             try {

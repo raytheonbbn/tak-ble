@@ -52,16 +52,16 @@ public class DateUtil {
         return r;
     }
 
-    public static final long millisFromCotTimeStr(String timeStr) {
+    public static long millisFromCotTimeStr(String timeStr) {
         return dateTimeFromCotTimeStr(timeStr).getMillis();
     }
 
 
-    public static final String toCotTime(long millisSinceEpochUtc) {
+    public static String toCotTime(long millisSinceEpochUtc) {
         return cotDateParser().print(millisSinceEpochUtc);
     }
 
-    public static final String toCotTimeMillis(long millisSinceEpochUtc) {
+    public static String toCotTimeMillis(long millisSinceEpochUtc) {
         return cotDateParserMillis().print(millisSinceEpochUtc);
     }
 }
