@@ -19,12 +19,14 @@ import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
 import com.atakmap.android.ble_forwarder.plugin.R;
 import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.HttpServerThread;
+import com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer;
 import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
 import com.atakmap.android.dropdown.DropDown;
 import com.atakmap.android.dropdown.DropDownReceiver;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.log.Log;
 
+import java.io.IOException;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 
@@ -59,16 +61,20 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     Handler handler;
 
+    // listens for CoT's from local ATAK instance and sends them to NewCotDequeuer,
+    // sends CoT's received over BLE to local ATAK instance
     private final CoTServerThread cotServer;
+    // sends CoT's over BLE connection using TAKBLEManager
     private final NewCotDequeuer newCotDequeuer;
+    // handles scanning for BLE devices, connecting, sending data over BLE connection,
+    // receiving data over BLE connection
+    TAKBLEManager bleManager;
 
     public static final String SERVER_STATUS_DOWN = "DOWN";
     public static final String SERVER_STATUS_UP = "UP";
     public static final String REMOTE_DEVICE_CONNECTED = "CONNECTED";
     public static final String REMOTE_DEVICE_NOT_CONNECTED = "NOT CONNECTED";
     public static final String REMOTE_DEVICE_CONNECTING = "CONNECTING";
-
-    TAKBLEManager bleManager;
 
     public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
     public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
@@ -161,8 +167,15 @@ public class MainDropDownReceiver extends DropDownReceiver
         Thread cotServerThread = new Thread(cotServer);
         cotServerThread.start();
 
-        Thread httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
-        httpServerThread.start();
+//        Thread httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
+//        httpServerThread.start();
+        MyRestServer restServer = new MyRestServer(8080);
+        try {
+            restServer.start();
+            Log.d(TAG, "Started rest server on port 8080");
+        } catch (IOException e) {
+            Log.e(TAG, "Failure to start http rest server", e);
+        }
 
         newCotDequeuer = new NewCotDequeuer(
                 this,
@@ -176,7 +189,7 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     @Override
     public void onNewCotReceived(String newCot) {
-        Log.d(TAG, "onNewCotReceived");
+        Log.d(TAG, "onNewCotReceived: \n" + newCot);
         newCotDequeuer.addNewCotToQueue(newCot);
     }
 
@@ -255,7 +268,7 @@ public class MainDropDownReceiver extends DropDownReceiver
             }
 
         }
-        
+
     }
 
     class PeripheralLogger implements Runnable {
