@@ -38,14 +38,14 @@ public class MyRestServer extends NanoHTTPD {
         Log.d(TAG, "Got request: " + session.getMethod() + " " + session.getUri());
         if (session.getUri().equals("/Marti/api/version/config")) {
             Log.d(TAG, "Responding to config request");
-            return newFixedLengthResponse("{\"version\":\"3\",\"type\":\"ServerConfig\",\"data\":{\"version\":\"4.5.38-RELEASE\",\"api\":\"3\",\"hostname\":\"127.0.0.1\"},\"nodeId\":\"e6ec3550334a41aeb08b06e9578ea212\"}");
+            return newFixedLengthResponse(Response.Status.OK, "application/json","{\"version\":\"3\",\"type\":\"ServerConfig\",\"data\":{\"version\":\"4.5.38-RELEASE\",\"api\":\"3\",\"hostname\":\"127.0.0.1\"},\"nodeId\":\"e6ec3550334a41aeb08b06e9578ea212\"}");
         } else if (session.getUri().equals("/Marti/api/clientEndPoints")) {
             Log.d(TAG, "Responding to client endpoints request");
             String currentTimestamp = generateTimestamp();
-            return newFixedLengthResponse("{\"version\":\"3\",\"type\":\"com.bbn.marti.remote.ClientEndpoint\",\"data\":[{\"callsign\":\"GAINER\",\"uid\":\"ANDROID-357712080935181\",\"lastEventTime\":\"" + currentTimestamp + "\",\"lastStatus\":\"Connected\"},{\"callsign\":\"GRAND SLAM CTL\",\"uid\":\"ANDROID-5517dda15a8eca57\",\"lastEventTime\":\"" + currentTimestamp + "\",\"lastStatus\":\"Connected\"}],\"nodeId\":\"e6ec3550334a41aeb08b06e9578ea212\"}");
+            return newFixedLengthResponse(Response.Status.OK, "application/json","{\"version\":\"3\",\"type\":\"com.bbn.marti.remote.ClientEndpoint\",\"data\":[{\"callsign\":\"GAINER\",\"uid\":\"ANDROID-357712080935181\",\"lastEventTime\":\"" + currentTimestamp + "\",\"lastStatus\":\"Connected\"},{\"callsign\":\"GRAND SLAM CTL\",\"uid\":\"ANDROID-5517dda15a8eca57\",\"lastEventTime\":\"" + currentTimestamp + "\",\"lastStatus\":\"Connected\"}],\"nodeId\":\"e6ec3550334a41aeb08b06e9578ea212\"}");
         } else if (session.getUri().equals("/Marti/sync/missionquery")) {
             Log.d(TAG, "Responding to missionquery request");
-            return newFixedLengthResponse("<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n" +
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/html","<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n" +
                     "<html>\n" +
                     "<head>\n" +
                     "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n" +
