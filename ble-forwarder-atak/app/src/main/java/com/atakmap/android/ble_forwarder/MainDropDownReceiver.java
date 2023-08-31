@@ -21,6 +21,7 @@ import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.HttpServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer;
 import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
+import com.atakmap.android.ble_forwarder.util.CotUtils;
 import com.atakmap.android.dropdown.DropDown;
 import com.atakmap.android.dropdown.DropDownReceiver;
 import com.atakmap.android.maps.MapView;
@@ -37,7 +38,8 @@ import java.util.concurrent.ArrayBlockingQueue;
 public class MainDropDownReceiver extends DropDownReceiver
         implements DropDown.OnStateListener, CoTServerThread.NewCotCallback,
         NewCotDequeuer.NewCotDequeuedCallback,
-        TAKBLEManager.TAKBLEManagerCallbacks {
+        TAKBLEManager.TAKBLEManagerCallbacks,
+        MyRestServer.MyRestServerCallbacks {
 
     public static final String TAG = MainDropDownReceiver.class.getSimpleName();
 
@@ -169,7 +171,7 @@ public class MainDropDownReceiver extends DropDownReceiver
 
 //        Thread httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
 //        httpServerThread.start();
-        MyRestServer restServer = new MyRestServer(8080);
+        MyRestServer restServer = new MyRestServer(8080, this);
         try {
             restServer.start();
             Log.d(TAG, "Started rest server on port 8080");
@@ -251,8 +253,6 @@ public class MainDropDownReceiver extends DropDownReceiver
     @Override
     public void receivedStringOverBLE(String receivedValue) {
 
-        // TODO: This needs to be modified to read both HTTP and CoT's
-
         if (receivedValue.startsWith(START_DELIMITER_STRING)) {
             peripheralLogMessages.add("Got start of CoT.");
             receivedCot = START_DELIMITER_STRING + " ";
@@ -261,14 +261,23 @@ public class MainDropDownReceiver extends DropDownReceiver
                 receivedCot += receivedValue;
 
                 if (receivedCot.startsWith(START_DELIMITER_STRING) && receivedCot.endsWith(DELIMITER_STRING)) {
-                    peripheralLogMessages.add("Received full cot: " + receivedCot);
-                    cotServer.addNewOutgoingCot(receivedCot);
+                    processReceivedCoT(receivedCot);
                     receivedCot = "";
                 }
             }
 
         }
 
+    }
+
+    private void processReceivedCoT(String cot) {
+        peripheralLogMessages.add("Received full cot: " + cot);
+        if (cot.equals(CotUtils.SYNC_SEARCH_FAKE_COT_STRING)) {
+            Log.d(TAG, "Got fake cot that signals a sync search from other device - generating JSON response from files that I am currently aware of...");
+
+        } else {
+            cotServer.addNewOutgoingCot(cot);
+        }
     }
 
     class PeripheralLogger implements Runnable {
@@ -343,4 +352,9 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     }
 
+    @Override
+    public void gotSyncSearchRequest() {
+        Log.d(TAG, "Sending cot for sync search request over BLE to other device...");
+        newCotDequeuer.addNewCotToQueue(CotUtils.SYNC_SEARCH_FAKE_COT_STRING);
+    }
 }

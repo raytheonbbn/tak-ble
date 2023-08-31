@@ -10,6 +10,7 @@ public class CotUtils {
     public static final String START_DELIMITER_STRING = "<?xml version=\"1.0\"";
     public static final byte[] DELIMITER = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
     public static final String DELIMITER_STRING = new String(DELIMITER, StandardCharsets.UTF_8);
+    public static final String SYNC_SEARCH_FAKE_COT_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>SYNC_SEARCH</event>";
 
     public static byte[] readCoTMessage(InputStream in) throws Exception {
 

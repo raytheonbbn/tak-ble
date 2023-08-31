@@ -2,8 +2,15 @@ package com.atakmap.android.ble_forwarder.takserver_facade;
 
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import java.util.TimeZone;
 
 import fi.iki.elonen.NanoHTTPD;
@@ -12,8 +19,15 @@ public class MyRestServer extends NanoHTTPD {
 
     private final static String TAG = MyRestServer.class.getSimpleName();
 
-    public MyRestServer(int port) {
+    public interface MyRestServerCallbacks {
+        void gotSyncSearchRequest();
+    }
+
+    private MyRestServerCallbacks callback;
+
+    public MyRestServer(int port, MyRestServerCallbacks callback) {
         super(port);
+        this.callback = callback;
     }
 
     public static String generateTimestamp() {
@@ -55,6 +69,36 @@ public class MyRestServer extends NanoHTTPD {
                     "<h3>404 TAK Server resource not found</h3>\n" +
                     "</body>\n" +
                     "</html>");
+        } else if (session.getUri().equals("/Marti/sync/missionupload")) {
+            Map<String, List<String>> parameters = session.getParameters();
+            Log.d(TAG, "Got mission upload with hash: " + parameters.get("hash"));
+
+            // getting body of POST
+            // Get the input stream of the POST request
+            InputStream inputStream = session.getInputStream();
+
+            // Create a temporary file to store the received ZIP content
+            File tempFile = new File("/sdcard/package.zip");
+            FileOutputStream fileOutputStream = null;
+            try {
+                fileOutputStream = new FileOutputStream(tempFile);
+
+                // Read the input stream and write it to the temporary file
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    fileOutputStream.write(buffer, 0, bytesRead);
+                }
+
+                // Close the output stream and input stream
+                fileOutputStream.close();
+                inputStream.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else if (session.getUri().equals("/Marti/sync/search")) {
+            Log.d(TAG, "got a sync search request, fetching list of files from other device over BLE...");
+            callback.gotSyncSearchRequest();
         }
         return newFixedLengthResponse("Hello from your REST endpoint!");
     }
