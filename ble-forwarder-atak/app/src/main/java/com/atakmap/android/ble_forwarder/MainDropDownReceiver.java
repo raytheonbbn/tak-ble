@@ -3,6 +3,7 @@ package com.atakmap.android.ble_forwarder;
 
 import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING;
 
 import android.content.Context;
 import android.content.Intent;
@@ -21,6 +22,7 @@ import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.HttpServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer;
 import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
+import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
 import com.atakmap.android.ble_forwarder.util.CotUtils;
 import com.atakmap.android.dropdown.DropDown;
 import com.atakmap.android.dropdown.DropDownReceiver;
@@ -171,7 +173,7 @@ public class MainDropDownReceiver extends DropDownReceiver
 
 //        Thread httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
 //        httpServerThread.start();
-        MyRestServer restServer = new MyRestServer(8080, this);
+        MyRestServer restServer = new MyRestServer(8080, this, context);
         try {
             restServer.start();
             Log.d(TAG, "Started rest server on port 8080");
@@ -274,7 +276,10 @@ public class MainDropDownReceiver extends DropDownReceiver
         peripheralLogMessages.add("Received full cot: " + cot);
         if (cot.equals(CotUtils.SYNC_SEARCH_FAKE_COT_STRING)) {
             Log.d(TAG, "Got fake cot that signals a sync search from other device - generating JSON response from files that I am currently aware of...");
-
+            String currentFilesJsonString = FileManager.getInstance().getJsonStringForCurrentFiles();
+            Log.d(TAG, "Current files json string: " + currentFilesJsonString);
+            String syncSearchResponseCot = SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING + currentFilesJsonString + DELIMITER_STRING;
+            newCotDequeuer.addNewCotToQueue(syncSearchResponseCot);
         } else {
             cotServer.addNewOutgoingCot(cot);
         }

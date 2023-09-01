@@ -1,13 +1,20 @@
 package com.atakmap.android.ble_forwarder.takserver_facade;
 
+import android.content.Context;
 import android.util.Log;
 
+import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
+import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
+import com.atakmap.android.maps.MapView;
+
+import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -19,15 +26,18 @@ public class MyRestServer extends NanoHTTPD {
 
     private final static String TAG = MyRestServer.class.getSimpleName();
 
+    Context context;
+
     public interface MyRestServerCallbacks {
         void gotSyncSearchRequest();
     }
 
     private MyRestServerCallbacks callback;
 
-    public MyRestServer(int port, MyRestServerCallbacks callback) {
+    public MyRestServer(int port, MyRestServerCallbacks callback, Context context) {
         super(port);
         this.callback = callback;
+        this.context = context;
     }
 
     public static String generateTimestamp() {
@@ -71,16 +81,41 @@ public class MyRestServer extends NanoHTTPD {
                     "</html>");
         } else if (session.getUri().equals("/Marti/sync/missionupload")) {
             Map<String, List<String>> parameters = session.getParameters();
-            Log.d(TAG, "Got mission upload with hash: " + parameters.get("hash"));
+            List<String> hashList = parameters.get("hash");
+            String fileHash = "";
+            if (hashList != null && !hashList.isEmpty()) {
+                fileHash = hashList.get(0);
+            }
+
+            Log.d(TAG, "Got mission upload with hash: " + fileHash);
 
             // getting body of POST
             // Get the input stream of the POST request
             InputStream inputStream = session.getInputStream();
 
             // Create a temporary file to store the received ZIP content
-            File tempFile = new File("/sdcard/package.zip");
+            String filePath = "/sdcard" + "/package_" + fileHash + ".zip";
+            File tempFile = new File(filePath);
+            Log.d(TAG, "Writing file from POST to path: " + filePath);
             FileOutputStream fileOutputStream = null;
             try {
+                FilesInformation.FileInfo fileInfo = new FilesInformation.FileInfo(
+                        Integer.toString(-1),
+                        fileHash,
+                        generateTimestamp(),
+                        Arrays.asList("missionpackage"),
+                        "application/x-zip-compressed",
+                        Long.toString(tempFile.length()),
+                        "anonymous",
+                        "1",
+                        fileHash,
+                        MapView.getDeviceUid(),
+                        MapView.getMapView().getDeviceCallsign(),
+                        "public"
+                );
+
+                FileManager.getInstance().addFile(fileHash, tempFile, fileInfo);
+
                 fileOutputStream = new FileOutputStream(tempFile);
 
                 // Read the input stream and write it to the temporary file
@@ -96,6 +131,9 @@ public class MyRestServer extends NanoHTTPD {
             } catch (IOException e) {
                 e.printStackTrace();
             }
+
+            return newFixedLengthResponse(Response.Status.OK, "text/plain",
+                    "http://127.0.0.1:8080/Marti/sync/content?hash=" + fileHash);
         } else if (session.getUri().equals("/Marti/sync/search")) {
             Log.d(TAG, "got a sync search request, fetching list of files from other device over BLE...");
             callback.gotSyncSearchRequest();
