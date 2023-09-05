@@ -1,6 +1,8 @@
 
 package com.atakmap.android.ble_forwarder;
 
+import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_RESPONSE_START_DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING;
@@ -19,16 +21,20 @@ import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
 import com.atakmap.android.ble_forwarder.plugin.R;
 import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
-import com.atakmap.android.ble_forwarder.takserver_facade.HttpServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer;
 import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
+import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
 import com.atakmap.android.ble_forwarder.util.CotUtils;
+import com.atakmap.android.ble_forwarder.util.FileNameAndBytes;
+import com.atakmap.android.ble_forwarder.util.Utils;
 import com.atakmap.android.dropdown.DropDown;
 import com.atakmap.android.dropdown.DropDownReceiver;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.log.Log;
+import com.google.gson.Gson;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -84,10 +90,17 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     public static String receivedCot = "";
 
-    private static SyncRequestCallback currentSyncRequestCallback = null;
+    private static SyncSearchCallback currentSyncSearchCallback = null;
+    private static SyncContentCallback currentSyncContentCallback = null;
 
-    public interface SyncRequestCallback {
+    private static Gson gson = new Gson();
+
+    public interface SyncSearchCallback {
         void result(String json);
+    }
+
+    public interface SyncContentCallback {
+        void result(FileNameAndBytes fileNameAndBytes);
     }
 
     /**************************** CONSTRUCTOR *****************************/
@@ -286,12 +299,41 @@ public class MainDropDownReceiver extends DropDownReceiver
             String syncSearchResponseCot = SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING + currentFilesJsonString + DELIMITER_STRING;
             newCotDequeuer.addNewCotToQueue(syncSearchResponseCot);
         } else if (cot.startsWith(SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING)) {
-            if (currentSyncRequestCallback != null) {
+            if (currentSyncSearchCallback != null) {
                 String json = cot.substring(SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING.length());
                 json = json.substring(0, json.length() - DELIMITER_STRING.length());
-                currentSyncRequestCallback.result(json);
+                currentSyncSearchCallback.result(json);
+                currentSyncSearchCallback = null;
             } else {
                 Log.w(TAG, "Got sync search response string, but sync request callback was null.");
+            }
+        } else if (cot.startsWith(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING)) {
+            String hash = cot.substring(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING.length());
+            hash = hash.substring(0, hash.length() - DELIMITER_STRING.length());
+            Log.d(TAG, "Got content request with hash: " + hash);
+            File file = FileManager.getInstance().getFileData(hash);
+            FilesInformation.FileInfo fileInfo = FileManager.getInstance().getFileInfo(hash);
+            try {
+                byte[] fileBytes = Utils.convertFileToByteArray(file);
+                String fileBytesString = Utils.encodeToBase64(fileBytes);
+                FileNameAndBytes fileNameAndBytes = new FileNameAndBytes();
+                fileNameAndBytes.setFileName(fileInfo.getName());
+                fileNameAndBytes.setFileBytesString(fileBytesString);
+                String fileNameAndBytesString = gson.toJson(fileNameAndBytes);
+                newCotDequeuer.addNewCotToQueue(CONTENT_RESPONSE_START_DELIMITER_STRING + fileNameAndBytesString + DELIMITER_STRING);
+            } catch (IOException e) {
+                e.printStackTrace();
+                Log.w(TAG, "Failed to read contents of file: " + e.getMessage(), e);
+            }
+
+        } else if (cot.startsWith(CONTENT_RESPONSE_START_DELIMITER_STRING)) {
+            if (currentSyncContentCallback != null) {
+                String fileNameAndBytesString = cot.substring(CONTENT_RESPONSE_START_DELIMITER_STRING.length());
+                fileNameAndBytesString = fileNameAndBytesString.substring(0, fileNameAndBytesString.length() - DELIMITER_STRING.length());
+                Log.d(TAG, "Got file bytes string: " + fileNameAndBytesString);
+                FileNameAndBytes fileNameAndBytes = gson.fromJson(fileNameAndBytesString, FileNameAndBytes.class);
+                currentSyncContentCallback.result(fileNameAndBytes);
+                currentSyncContentCallback = null;
             }
         } else {
             cotServer.addNewOutgoingCot(cot);
@@ -370,9 +412,15 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     }
 
-    public static void sendSyncSearchRequest(SyncRequestCallback callback) {
+    public static void sendSyncSearchRequest(SyncSearchCallback callback) {
         Log.d(TAG, "Sending cot for sync search request over BLE to other device...");
         newCotDequeuer.addNewCotToQueue(CotUtils.SYNC_SEARCH_FAKE_COT_STRING);
-        currentSyncRequestCallback = callback;
+        currentSyncSearchCallback = callback;
+    }
+
+    public static void sendSyncContentRequest(String hash, SyncContentCallback callback) {
+        Log.d(TAG, "Sending cot for sync content request over BLE to other device...");
+        newCotDequeuer.addNewCotToQueue(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING + hash + DELIMITER_STRING);
+        currentSyncContentCallback = callback;
     }
 }

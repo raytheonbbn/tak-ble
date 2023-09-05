@@ -6,15 +6,15 @@ import android.util.Log;
 import com.atakmap.android.ble_forwarder.MainDropDownReceiver;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
-import com.atakmap.android.maps.MapView;
+import com.atakmap.android.ble_forwarder.util.FileNameAndBytes;
+import com.atakmap.android.ble_forwarder.util.Utils;
 
-import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.TimeZone;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 import fi.iki.elonen.NanoHTTPD;
 
@@ -32,6 +31,7 @@ public class MyRestServer extends NanoHTTPD {
 
     Context context;
     BlockingQueue<String> pendingSyncSearchResults = new ArrayBlockingQueue<>(1000);
+    BlockingQueue<FileNameAndBytes> pendingSyncContentResults = new ArrayBlockingQueue<>(1000);
 
     public MyRestServer(int port, Context context) {
         super(port);
@@ -147,7 +147,7 @@ public class MyRestServer extends NanoHTTPD {
                     "http://127.0.0.1:8080/Marti/sync/content?hash=" + fileHash);
         } else if (session.getUri().equals("/Marti/sync/search")) {
             Log.d(TAG, "got a sync search request, fetching list of files from other device over BLE...");
-            MainDropDownReceiver.sendSyncSearchRequest(new MainDropDownReceiver.SyncRequestCallback() {
+            MainDropDownReceiver.sendSyncSearchRequest(new MainDropDownReceiver.SyncSearchCallback() {
                 @Override
                 public void result(String json) {
                     Log.d(TAG, "Adding json to pending sync search results.");
@@ -161,6 +161,42 @@ public class MyRestServer extends NanoHTTPD {
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
                 } else {
                     return newFixedLengthResponse(Response.Status.OK, "text/json", syncSearchResult);
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                Log.e(TAG, "Error waiting for sync search result: " + e.getMessage(), e);
+            }
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
+        } else if (session.getUri().equals("/Marti/sync/content")) {
+            Map<String, List<String>> parameters = session.getParameters();
+            List<String> hashList = parameters.get("hash");
+            String fileHash = "";
+            if (hashList != null && !hashList.isEmpty()) {
+                fileHash = hashList.get(0);
+            }
+            MainDropDownReceiver.sendSyncContentRequest(fileHash,
+                    new MainDropDownReceiver.SyncContentCallback() {
+                        @Override
+                        public void result(FileNameAndBytes fileNameAndBytes) {
+                            Log.d(TAG, "Adding sync content result to queue");
+                            pendingSyncContentResults.add(fileNameAndBytes);
+                        }
+                    });
+            try {
+                FileNameAndBytes fileNameAndBytes = pendingSyncContentResults.take();
+                Log.d(TAG, "Got sync content result, responding to request");
+                if (fileNameAndBytes == null) {
+                    return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
+                } else {
+                    String fileName = fileNameAndBytes.getFileName();
+                    byte[] fileBytes = Utils.decodeFromBase64(fileNameAndBytes.getFileBytesString());
+                    Log.d(TAG, "Sending sync content bytes with name " + fileName + " and length " + fileBytes.length);
+                    Response response = newFixedLengthResponse(Response.Status.OK, "application/x-zip-compressed", new ByteArrayInputStream(fileBytes), fileBytes.length);
+                    String contentDisposition = "inline; filename=\"" + fileName + "\"\r\n";
+                    Log.d(TAG, "Content disposition: " + contentDisposition);
+                    response.addHeader("Content-Disposition", contentDisposition);
+                    response.addHeader("Content-Length", Long.toString(fileBytes.length));
+                    return response;
                 }
             } catch (InterruptedException e) {
                 e.printStackTrace();

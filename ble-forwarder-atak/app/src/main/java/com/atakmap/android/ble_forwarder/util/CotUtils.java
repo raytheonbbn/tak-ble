@@ -12,7 +12,8 @@ public class CotUtils {
     public static final String DELIMITER_STRING = new String(DELIMITER, StandardCharsets.UTF_8);
     public static final String SYNC_SEARCH_FAKE_COT_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>SYNC_SEARCH</event>";
     public static final String SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"sync_search_response\">";
-
+    public static final String CONTENT_REQUEST_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"content_request\">";
+    public static final String CONTENT_RESPONSE_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"content_response\">";
 
     public static byte[] readCoTMessage(InputStream in) throws Exception {
 
