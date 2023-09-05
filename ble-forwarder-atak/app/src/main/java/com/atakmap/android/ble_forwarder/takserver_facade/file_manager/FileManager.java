@@ -41,6 +41,9 @@ public class FileManager {
 
     public String getJsonStringForCurrentFiles() {
         FilesInformation filesInformation = new FilesInformation(hashToFileInfo.size(), new ArrayList<>(hashToFileInfo.values()));
+        for (int i = 0; i < filesInformation.getResults().size(); i++) {
+            filesInformation.getResults().get(i).setPrimaryKey(Integer.toString(i + 1));
+        }
         return gson.toJson(filesInformation);
     }
 

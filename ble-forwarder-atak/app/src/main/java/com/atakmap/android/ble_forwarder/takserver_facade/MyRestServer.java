@@ -80,12 +80,23 @@ public class MyRestServer extends NanoHTTPD {
         } else if (session.getUri().equals("/Marti/sync/missionupload")) {
             Map<String, List<String>> parameters = session.getParameters();
             List<String> hashList = parameters.get("hash");
+            List<String> fileNameList = parameters.get("filename");
+            List<String> creatorUidList = parameters.get("creatorUid");
             String fileHash = "";
             if (hashList != null && !hashList.isEmpty()) {
                 fileHash = hashList.get(0);
             }
+            String fileName = "";
+            if (fileNameList != null && !fileNameList.isEmpty()) {
+                fileName = fileNameList.get(0);
+            }
+            String creatorUid = "";
+            if (creatorUidList != null && !creatorUidList.isEmpty()) {
+                creatorUid = creatorUidList.get(0);
+            }
 
-            Log.d(TAG, "Got mission upload with hash: " + fileHash);
+            Log.d(TAG, "Got mission upload with hash: " + fileHash + ", fileName: " +
+                    fileName + ", creatorUid: " + creatorUid);
 
             // getting body of POST
             // Get the input stream of the POST request
@@ -105,10 +116,10 @@ public class MyRestServer extends NanoHTTPD {
                         "application/x-zip-compressed",
                         Long.toString(tempFile.length()),
                         "anonymous",
-                        "1",
+                        "",
                         fileHash,
-                        MapView.getDeviceUid(),
-                        MapView.getMapView().getDeviceCallsign(),
+                        creatorUid,
+                        fileName,
                         "public"
                 );
 
@@ -128,6 +139,8 @@ public class MyRestServer extends NanoHTTPD {
                 inputStream.close();
             } catch (IOException e) {
                 e.printStackTrace();
+                return newFixedLengthResponse(Response.Status.OK, "text/plain",
+                        "http://127.0.0.1:8080/Marti/sync/content?hash=" + fileHash);
             }
 
             return newFixedLengthResponse(Response.Status.OK, "text/plain",
