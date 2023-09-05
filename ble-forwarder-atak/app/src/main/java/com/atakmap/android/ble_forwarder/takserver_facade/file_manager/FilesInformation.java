@@ -4,11 +4,11 @@ import java.util.List;
 
 public class FilesInformation {
     private int resultCount;
-    private List<FileInfo> fileInfos;
+    private List<FileInfo> results;
 
-    public FilesInformation(int resultCount, List<FileInfo> fileInfos) {
+    public FilesInformation(int resultCount, List<FileInfo> results) {
         this.resultCount = resultCount;
-        this.fileInfos = fileInfos;
+        this.results = results;
     }
 
     public int getResultCount() {
@@ -16,7 +16,7 @@ public class FilesInformation {
     }
 
     public List<FileInfo> getResults() {
-        return fileInfos;
+        return results;
     }
 
     public static class FileInfo {

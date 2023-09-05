@@ -3,6 +3,7 @@ package com.atakmap.android.ble_forwarder.takserver_facade;
 import android.content.Context;
 import android.util.Log;
 
+import com.atakmap.android.ble_forwarder.MainDropDownReceiver;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
 import com.atakmap.android.maps.MapView;
@@ -19,6 +20,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import fi.iki.elonen.NanoHTTPD;
 
@@ -27,16 +31,10 @@ public class MyRestServer extends NanoHTTPD {
     private final static String TAG = MyRestServer.class.getSimpleName();
 
     Context context;
+    BlockingQueue<String> pendingSyncSearchResults = new ArrayBlockingQueue<>(1000);
 
-    public interface MyRestServerCallbacks {
-        void gotSyncSearchRequest();
-    }
-
-    private MyRestServerCallbacks callback;
-
-    public MyRestServer(int port, MyRestServerCallbacks callback, Context context) {
+    public MyRestServer(int port, Context context) {
         super(port);
-        this.callback = callback;
         this.context = context;
     }
 
@@ -136,8 +134,28 @@ public class MyRestServer extends NanoHTTPD {
                     "http://127.0.0.1:8080/Marti/sync/content?hash=" + fileHash);
         } else if (session.getUri().equals("/Marti/sync/search")) {
             Log.d(TAG, "got a sync search request, fetching list of files from other device over BLE...");
-            callback.gotSyncSearchRequest();
+            MainDropDownReceiver.sendSyncSearchRequest(new MainDropDownReceiver.SyncRequestCallback() {
+                @Override
+                public void result(String json) {
+                    Log.d(TAG, "Adding json to pending sync search results.");
+                    pendingSyncSearchResults.add(json);
+                }
+            });
+            try {
+                String syncSearchResult = pendingSyncSearchResults.take();
+                Log.d(TAG, "Got sync search result: " + syncSearchResult);
+                if (syncSearchResult == null) {
+                    return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
+                } else {
+                    return newFixedLengthResponse(Response.Status.OK, "text/json", syncSearchResult);
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                Log.e(TAG, "Error waiting for sync search result: " + e.getMessage(), e);
+            }
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
         }
+
         return newFixedLengthResponse("Hello from your REST endpoint!");
     }
 }

@@ -40,8 +40,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 public class MainDropDownReceiver extends DropDownReceiver
         implements DropDown.OnStateListener, CoTServerThread.NewCotCallback,
         NewCotDequeuer.NewCotDequeuedCallback,
-        TAKBLEManager.TAKBLEManagerCallbacks,
-        MyRestServer.MyRestServerCallbacks {
+        TAKBLEManager.TAKBLEManagerCallbacks {
 
     public static final String TAG = MainDropDownReceiver.class.getSimpleName();
 
@@ -69,7 +68,7 @@ public class MainDropDownReceiver extends DropDownReceiver
     // sends CoT's received over BLE to local ATAK instance
     private final CoTServerThread cotServer;
     // sends CoT's over BLE connection using TAKBLEManager
-    private final NewCotDequeuer newCotDequeuer;
+    private static NewCotDequeuer newCotDequeuer;
     // handles scanning for BLE devices, connecting, sending data over BLE connection,
     // receiving data over BLE connection
     TAKBLEManager bleManager;
@@ -84,6 +83,12 @@ public class MainDropDownReceiver extends DropDownReceiver
     public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
 
     public static String receivedCot = "";
+
+    private static SyncRequestCallback currentSyncRequestCallback = null;
+
+    public interface SyncRequestCallback {
+        void result(String json);
+    }
 
     /**************************** CONSTRUCTOR *****************************/
 
@@ -173,7 +178,7 @@ public class MainDropDownReceiver extends DropDownReceiver
 
 //        Thread httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
 //        httpServerThread.start();
-        MyRestServer restServer = new MyRestServer(8080, this, context);
+        MyRestServer restServer = new MyRestServer(8080, context);
         try {
             restServer.start();
             Log.d(TAG, "Started rest server on port 8080");
@@ -280,6 +285,14 @@ public class MainDropDownReceiver extends DropDownReceiver
             Log.d(TAG, "Current files json string: " + currentFilesJsonString);
             String syncSearchResponseCot = SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING + currentFilesJsonString + DELIMITER_STRING;
             newCotDequeuer.addNewCotToQueue(syncSearchResponseCot);
+        } else if (cot.startsWith(SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING)) {
+            if (currentSyncRequestCallback != null) {
+                String json = cot.substring(SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING.length());
+                json = json.substring(0, json.length() - DELIMITER_STRING.length());
+                currentSyncRequestCallback.result(json);
+            } else {
+                Log.w(TAG, "Got sync search response string, but sync request callback was null.");
+            }
         } else {
             cotServer.addNewOutgoingCot(cot);
         }
@@ -357,9 +370,9 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     }
 
-    @Override
-    public void gotSyncSearchRequest() {
+    public static void sendSyncSearchRequest(SyncRequestCallback callback) {
         Log.d(TAG, "Sending cot for sync search request over BLE to other device...");
         newCotDequeuer.addNewCotToQueue(CotUtils.SYNC_SEARCH_FAKE_COT_STRING);
+        currentSyncRequestCallback = callback;
     }
 }
