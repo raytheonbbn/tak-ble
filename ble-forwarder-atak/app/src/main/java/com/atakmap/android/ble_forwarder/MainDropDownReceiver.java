@@ -315,7 +315,7 @@ public class MainDropDownReceiver extends DropDownReceiver
             FilesInformation.FileInfo fileInfo = FileManager.getInstance().getFileInfo(hash);
             try {
                 byte[] fileBytes = Utils.convertFileToByteArray(file);
-                String fileBytesString = Utils.encodeToBase64(fileBytes);
+                String fileBytesString = Utils.byteArrayToHexString(fileBytes);
                 FileNameAndBytes fileNameAndBytes = new FileNameAndBytes();
                 fileNameAndBytes.setFileName(fileInfo.getName());
                 fileNameAndBytes.setFileBytesString(fileBytesString);

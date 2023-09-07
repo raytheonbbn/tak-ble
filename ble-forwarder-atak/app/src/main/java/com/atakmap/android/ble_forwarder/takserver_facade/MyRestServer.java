@@ -9,9 +9,11 @@ import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInfo
 import com.atakmap.android.ble_forwarder.util.FileNameAndBytes;
 import com.atakmap.android.ble_forwarder.util.Utils;
 
+import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
@@ -189,10 +191,36 @@ public class MyRestServer extends NanoHTTPD {
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
                 } else {
                     String fileName = fileNameAndBytes.getFileName();
-                    byte[] fileBytes = Utils.decodeFromBase64(fileNameAndBytes.getFileBytesString());
+                    String fileBytesString = fileNameAndBytes.getFileBytesString();
+                    fileBytesString = fileBytesString.substring(fileBytesString.indexOf("504B0304"));
+                    fileBytesString = fileBytesString.substring(0, fileBytesString.length() - "0D0A2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D363337396464633735616261323031632D2D0D0A".length());
+
+                    Log.d(TAG, "File bytes string: " + fileBytesString);
+
+                    byte[] fileBytes = Utils.hexStringToByteArray(fileBytesString);
+
+                    try {
+                        // Create a FileWriter object with the given file path
+                        FileWriter fileWriter = new FileWriter(new File("/sdcard/" + "package_" + fileHash + ".txt"));
+
+                        // Create a BufferedWriter to write efficiently
+                        BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+
+                        // Write the string to the file
+                        bufferedWriter.write(Utils.byteArrayToHexString(fileBytes));
+
+                        // Close the BufferedWriter to flush and release resources
+                        bufferedWriter.close();
+
+                        // Optionally, you can also close the FileWriter
+                        fileWriter.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
                     Log.d(TAG, "Sending sync content bytes with name " + fileName + " and length " + fileBytes.length);
                     Response response = newFixedLengthResponse(Response.Status.OK, "application/x-zip-compressed", new ByteArrayInputStream(fileBytes), fileBytes.length);
-                    String contentDisposition = "inline; filename=\"" + fileName + "\"\r\n";
+                    String contentDisposition = "inline; filename=" + fileName + "\r\n";
                     Log.d(TAG, "Content disposition: " + contentDisposition);
                     response.addHeader("Content-Disposition", contentDisposition);
                     response.addHeader("Content-Length", Long.toString(fileBytes.length));

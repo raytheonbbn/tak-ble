@@ -18,6 +18,24 @@ public class Utils {
         return Base64.decode(base64String, Base64.DEFAULT);
     }
 
+    public static String byteArrayToHexString(byte[] bytes) {
+        StringBuilder stringBuilder = new StringBuilder();
+        for (byte b : bytes) {
+            stringBuilder.append(String.format("%02X", b));
+        }
+        return stringBuilder.toString();
+    }
+
+    public static byte[] hexStringToByteArray(String hexString) {
+        int len = hexString.length();
+        byte[] byteArray = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            byteArray[i / 2] = (byte) ((Character.digit(hexString.charAt(i), 16) << 4)
+                    + Character.digit(hexString.charAt(i + 1), 16));
+        }
+        return byteArray;
+    }
+
 
     public static byte[] convertFileToByteArray(File file) throws IOException {
         FileInputStream fileInputStream = null;
