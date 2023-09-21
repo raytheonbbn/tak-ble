@@ -1,6 +1,9 @@
 package com.atakmap.android.ble_forwarder.takserver_facade;
 
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Bundle;
 import android.util.Log;
 
 import com.atakmap.android.ble_forwarder.MainDropDownReceiver;
@@ -8,6 +11,12 @@ import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManag
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
 import com.atakmap.android.ble_forwarder.util.FileNameAndBytes;
 import com.atakmap.android.ble_forwarder.util.Utils;
+import com.atakmap.android.importexport.ImportExportMapComponent;
+import com.atakmap.android.importexport.ImportReceiver;
+import com.atakmap.android.importexport.Importer;
+import com.atakmap.android.importexport.ImporterManager;
+import com.atakmap.android.ipc.AtakBroadcast;
+import com.atakmap.comms.CommsMapComponent;
 
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
@@ -21,6 +30,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -199,31 +209,45 @@ public class MyRestServer extends NanoHTTPD {
 
                     byte[] fileBytes = Utils.hexStringToByteArray(fileBytesString);
 
+                    // Create a temporary file to store the received ZIP content
+                    String filePath = "/sdcard" + "/atak/tools/datapackage" + "/package_" + fileHash + ".zip";
+                    Log.d(TAG, "Writing received package to file path: " + filePath);
+                    File tempFile = new File(filePath);
+                    FileOutputStream fileOutputStream = null;
+                    InputStream inputStream = new ByteArrayInputStream(fileBytes);
                     try {
-                        // Create a FileWriter object with the given file path
-                        FileWriter fileWriter = new FileWriter(new File("/sdcard/" + "package_" + fileHash + ".txt"));
+                        fileOutputStream = new FileOutputStream(tempFile);
 
-                        // Create a BufferedWriter to write efficiently
-                        BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+                        // Read the input stream and write it to the temporary file
+                        byte[] buffer = new byte[1024];
+                        int bytesRead;
+                        while ((bytesRead = inputStream.read(buffer)) != -1) {
+                            fileOutputStream.write(buffer, 0, bytesRead);
+                        }
 
-                        // Write the string to the file
-                        bufferedWriter.write(Utils.byteArrayToHexString(fileBytes));
-
-                        // Close the BufferedWriter to flush and release resources
-                        bufferedWriter.close();
-
-                        // Optionally, you can also close the FileWriter
-                        fileWriter.close();
+                        // Close the output stream and input stream
+                        fileOutputStream.close();
+                        inputStream.close();
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
+
+                    File f = new File(filePath);
+
+//                    Intent i = new Intent(ImportExportMapComponent.ACTION_IMPORT_DATA);
+//                    i.putExtra(ImportReceiver.EXTRA_URI, Uri.fromFile(f).toString());
+//                    i.putExtra(ImportReceiver.EXTRA_ADVANCED_OPTIONS, true);
+//                    // no content or MIME type is specified, ATAK will auto-detect
+//
+//                    AtakBroadcast.getInstance().sendBroadcast(i);
+//                    Log.d(TAG, "Sending broadcast for import of data");
 
                     Log.d(TAG, "Sending sync content bytes with name " + fileName + " and length " + fileBytes.length);
                     Response response = newFixedLengthResponse(Response.Status.OK, "application/x-zip-compressed", new ByteArrayInputStream(fileBytes), fileBytes.length);
                     String contentDisposition = "inline; filename=" + fileName + "\r\n";
                     Log.d(TAG, "Content disposition: " + contentDisposition);
                     response.addHeader("Content-Disposition", contentDisposition);
-                    response.addHeader("Content-Length", Long.toString(fileBytes.length));
+                    Log.d(TAG, "Returning response for sync content get.");
                     return response;
                 }
             } catch (InterruptedException e) {
