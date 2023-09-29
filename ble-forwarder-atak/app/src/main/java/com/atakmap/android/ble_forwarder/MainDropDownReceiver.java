@@ -326,6 +326,8 @@ public class MainDropDownReceiver extends DropDownReceiver
             try {
                 byte[] fileBytes = Utils.convertFileToByteArray(file);
                 String fileBytesString = Utils.byteArrayToHexString(fileBytes);
+                fileBytesString = fileBytesString.substring(fileBytesString.indexOf("504B0304"));
+                fileBytesString = fileBytesString.substring(0, fileBytesString.length() - "0D0A2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D363337396464633735616261323031632D2D0D0A".length());
                 FileNameAndBytes fileNameAndBytes = new FileNameAndBytes();
                 fileNameAndBytes.setFileName(fileInfo.getName());
                 fileNameAndBytes.setFileBytesString(fileBytesString);

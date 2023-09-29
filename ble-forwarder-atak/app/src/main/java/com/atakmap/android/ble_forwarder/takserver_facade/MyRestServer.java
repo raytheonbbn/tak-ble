@@ -212,8 +212,6 @@ public class MyRestServer extends NanoHTTPD {
                 } else {
                     String fileName = fileNameAndBytes.getFileName();
                     String fileBytesString = fileNameAndBytes.getFileBytesString();
-                    fileBytesString = fileBytesString.substring(fileBytesString.indexOf("504B0304"));
-                    fileBytesString = fileBytesString.substring(0, fileBytesString.length() - "0D0A2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D363337396464633735616261323031632D2D0D0A".length());
 
                     Log.d(TAG, "File bytes string: " + fileBytesString);
 
