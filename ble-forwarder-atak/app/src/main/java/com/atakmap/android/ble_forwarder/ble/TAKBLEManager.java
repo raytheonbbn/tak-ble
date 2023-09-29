@@ -2,6 +2,8 @@ package com.atakmap.android.ble_forwarder.ble;
 
 import static android.content.Context.BLUETOOTH_SERVICE;
 
+import static com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer.READ_SIZE;
+
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -87,6 +89,8 @@ public class TAKBLEManager {
     /* Collection of notification subscribers */
     private final Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
 
+    boolean mtuNegotiated = false;
+
     @SuppressLint("MissingPermission")
     public boolean initialize() {
         mBluetoothManager = (BluetoothManager) MapView.getMapView().getContext().getSystemService(BLUETOOTH_SERVICE);
@@ -134,7 +138,11 @@ public class TAKBLEManager {
     }
 
     public void sendDataToConnectedDevices(String s) {
-        notifyRegisteredDevices(s);
+        if (mtuNegotiated) {
+            notifyRegisteredDevices(s);
+        } else {
+            Log.w(TAG, "Not notifying registered devices of new data, mtu not negotiated yet!");
+        }
     }
 
     class BLEScanner implements Runnable {
@@ -324,23 +332,24 @@ public class TAKBLEManager {
      * to the characteristic.
      */
     @SuppressLint("MissingPermission")
-    private void notifyRegisteredDevices(String newCot) {
+    private void notifyRegisteredDevices(String string) {
         if (mRegisteredDevices.isEmpty()) {
             Log.i(TAG, "No subscribers registered");
             return;
         }
 
-        byte[] newCotBytes = newCot.getBytes(StandardCharsets.UTF_8);
-        centralLogMessages.add("Updating connected devices with new cot:\n" + newCot);
-        Log.d(TAG, "Updating connected devices with new cot:\n" + newCot);
-        centralLogMessages.add("Length of new cot: " + newCotBytes.length);
+        byte[] stringBytes = string.getBytes(StandardCharsets.UTF_8);
+        centralLogMessages.add("Updating connected devices with new string:\n" + string);
+        Log.d(TAG, "Updating connected devices with new string:\n" + string);
+        centralLogMessages.add("Length of new string: " + stringBytes.length);
 
         //Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
+        BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
+                .getService(TimeProfile.TIME_SERVICE)
+                .getCharacteristic(TimeProfile.CURRENT_TIME);
+        timeCharacteristic.setValue(stringBytes);
+
         for (BluetoothDevice device : mRegisteredDevices) {
-            BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
-                    .getService(TimeProfile.TIME_SERVICE)
-                    .getCharacteristic(TimeProfile.CURRENT_TIME);
-            timeCharacteristic.setValue(newCotBytes);
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
         }
     }
@@ -376,13 +385,18 @@ public class TAKBLEManager {
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset,
                                                 BluetoothGattCharacteristic characteristic) {
             long now = System.currentTimeMillis();
-            if (TimeProfile.LOCAL_TIME_INFO.equals(characteristic.getUuid())) {
+            Log.d(TAG, "Got characteristic read request for uuid: " + characteristic.getUuid());
+            if (TimeProfile.CURRENT_TIME.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read LocalTimeInfo");
+                BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
+                        .getService(TimeProfile.TIME_SERVICE)
+                        .getCharacteristic(TimeProfile.CURRENT_TIME);
+
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
                         BluetoothGatt.GATT_SUCCESS,
                         0,
-                        TimeProfile.getLocalTimeInfo(now));
+                        timeCharacteristic.getValue());
             } else {
                 // Invalid characteristic
                 Log.w(TAG, "Invalid Characteristic Read: " + characteristic.getUuid());
@@ -454,6 +468,12 @@ public class TAKBLEManager {
                 }
             }
         }
+
+        @Override
+        public void onMtuChanged(BluetoothDevice device, int mtu) {
+            Log.d(TAG, "Mtu changed!");
+            mtuNegotiated = true;
+        }
     };
 
     // Device connect call back
@@ -464,9 +484,14 @@ public class TAKBLEManager {
         public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
             // this will get called anytime you perform a read or write characteristic operation
 
-            String receivedValue = characteristic.getStringValue(0);
+            Log.d(TAG, "onCharacteristicChanged notification.");
 
-            callbacks.receivedStringOverBLE(receivedValue);
+            //String receivedValue = characteristic.getStringValue(0);
+
+            Log.d(TAG, "Trying to read characteristic.");
+            gatt.readCharacteristic(characteristic);
+
+            //callbacks.receivedStringOverBLE(receivedValue);
 
         }
 
@@ -500,7 +525,39 @@ public class TAKBLEManager {
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
 
+                Log.d(TAG, "Successfully discovered services for connected device.");
                 peripheralLogMessages.add("Discovered services for connected device.");
+
+                Log.d(TAG, "requesting MTU");
+                mBluetoothGatt.requestMtu(READ_SIZE);
+
+            } else {
+                peripheralLogMessages.add("Failed to discover services: " + status);
+            }
+
+        }
+
+        @Override
+        // Result of a characteristic read operation
+        public void onCharacteristicRead(BluetoothGatt gatt,
+                                         BluetoothGattCharacteristic characteristic,
+                                         int status) {
+            peripheralLogMessages.add("onCharacteristicRead with status " + status);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                peripheralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
+                String readValue = characteristic.getStringValue(0);
+                peripheralLogMessages.add("Got value: " + readValue);
+                Log.d(TAG, "Got value: " + readValue);
+                callbacks.receivedStringOverBLE(readValue);
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Successfully negotiated MTU of " + READ_SIZE);
+
                 for (BluetoothGattService service : mBluetoothGatt.getServices()) {
                     peripheralLogMessages.add("Got service with uuid " + service.getUuid());
                     if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
@@ -520,22 +577,9 @@ public class TAKBLEManager {
                         }
                     }
                 }
+
             } else {
-                peripheralLogMessages.add("Failed to discover services: " + status);
-            }
-
-        }
-
-        @Override
-        // Result of a characteristic read operation
-        public void onCharacteristicRead(BluetoothGatt gatt,
-                                         BluetoothGattCharacteristic characteristic,
-                                         int status) {
-            peripheralLogMessages.add("onCharacteristicRead with status " + status);
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                peripheralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
-                peripheralLogMessages.add("Got value: " + characteristic.getStringValue(0));
-                Log.d(TAG, "Got value: " + characteristic.getStringValue(0));
+                Log.w(TAG, "Failed to negotiate MTU.");
             }
         }
     };

@@ -275,10 +275,12 @@ public class MainDropDownReceiver extends DropDownReceiver
 
         if (receivedValue.startsWith(START_DELIMITER_STRING)) {
             peripheralLogMessages.add("Got start of CoT.");
-            receivedCot = START_DELIMITER_STRING + " ";
+            //receivedCot = START_DELIMITER_STRING + " ";
         } else {
             if (!receivedCot.equals("")) {
                 receivedCot += receivedValue;
+
+                Log.d(TAG, "ReceivedCot so far: " + receivedCot);
 
                 if (receivedCot.startsWith(START_DELIMITER_STRING) && receivedCot.endsWith(DELIMITER_STRING)) {
                     processReceivedCoT(receivedCot);
