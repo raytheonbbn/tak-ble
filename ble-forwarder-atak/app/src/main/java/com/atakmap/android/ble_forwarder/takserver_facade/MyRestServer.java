@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,6 +45,8 @@ public class MyRestServer extends NanoHTTPD {
     Context context;
     BlockingQueue<String> pendingSyncSearchResults = new ArrayBlockingQueue<>(1000);
     BlockingQueue<FileNameAndBytes> pendingSyncContentResults = new ArrayBlockingQueue<>(1000);
+
+    HashSet<String> syncContentRequestsReceived = new HashSet<>();
 
     public MyRestServer(int port, Context context) {
         super(port);
@@ -186,6 +189,13 @@ public class MyRestServer extends NanoHTTPD {
             if (hashList != null && !hashList.isEmpty()) {
                 fileHash = hashList.get(0);
             }
+
+            if (syncContentRequestsReceived.contains(fileHash)) {
+                return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
+            } else {
+                syncContentRequestsReceived.add(fileHash);
+            }
+
             MainDropDownReceiver.sendSyncContentRequest(fileHash,
                     new MainDropDownReceiver.SyncContentCallback() {
                         @Override

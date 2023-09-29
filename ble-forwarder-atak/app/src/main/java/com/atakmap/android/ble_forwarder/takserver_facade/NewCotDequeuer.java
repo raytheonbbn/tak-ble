@@ -11,7 +11,7 @@ public class NewCotDequeuer implements Runnable {
         void newCotSubstringDequeued(String newCotSubstring);
     }
 
-    public static final int READ_SIZE = 512;
+    public static final int READ_SIZE = 511;
 
     public static final String TAG = NewCotDequeuer.class.getSimpleName();
 
@@ -41,7 +41,7 @@ public class NewCotDequeuer implements Runnable {
                 Log.d(TAG, "dequeuing new cot: " + newCot);
                 for (int i = 0; i < newCot.length(); i += READ_SIZE) {
                     try {
-                        Thread.sleep(1000);
+                        Thread.sleep(300);
                     } catch (InterruptedException e) {
                         // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
                         // then that means we are getting data in the middle of a CoT that we didn't get the start of -

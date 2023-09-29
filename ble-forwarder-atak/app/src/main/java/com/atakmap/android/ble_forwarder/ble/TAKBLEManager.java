@@ -529,7 +529,7 @@ public class TAKBLEManager {
                 peripheralLogMessages.add("Discovered services for connected device.");
 
                 Log.d(TAG, "requesting MTU");
-                mBluetoothGatt.requestMtu(READ_SIZE);
+                mBluetoothGatt.requestMtu(READ_SIZE+1);
 
             } else {
                 peripheralLogMessages.add("Failed to discover services: " + status);
@@ -546,6 +546,9 @@ public class TAKBLEManager {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 peripheralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
                 String readValue = characteristic.getStringValue(0);
+                if (readValue.length() > READ_SIZE) {
+                    readValue = readValue.substring(0, READ_SIZE);
+                }
                 peripheralLogMessages.add("Got value: " + readValue);
                 Log.d(TAG, "Got value: " + readValue);
                 callbacks.receivedStringOverBLE(readValue);

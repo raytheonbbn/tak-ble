@@ -275,7 +275,14 @@ public class MainDropDownReceiver extends DropDownReceiver
 
         if (receivedValue.startsWith(START_DELIMITER_STRING)) {
             peripheralLogMessages.add("Got start of CoT.");
-            //receivedCot = START_DELIMITER_STRING + " ";
+            //receivedCot = START_DELIMITER_STRING;// + " ";
+            receivedCot = receivedValue;
+
+            if (receivedCot.startsWith(START_DELIMITER_STRING) && receivedCot.endsWith(DELIMITER_STRING)) {
+                processReceivedCoT(receivedCot);
+                receivedCot = "";
+            }
+
         } else {
             if (!receivedCot.equals("")) {
                 receivedCot += receivedValue;
@@ -294,6 +301,7 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     private void processReceivedCoT(String cot) {
         peripheralLogMessages.add("Received full cot: " + cot);
+        Log.d(TAG, "Received full cot: " + cot);
         if (cot.equals(CotUtils.SYNC_SEARCH_FAKE_COT_STRING)) {
             Log.d(TAG, "Got fake cot that signals a sync search from other device - generating JSON response from files that I am currently aware of...");
             String currentFilesJsonString = FileManager.getInstance().getJsonStringForCurrentFiles();
