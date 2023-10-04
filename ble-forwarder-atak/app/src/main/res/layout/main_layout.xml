@@ -37,7 +37,7 @@
                         android:id="@+id/startScanButton"
                         style="@style/darkButton"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
+                        android:layout_height="40dp"
                         android:layout_weight="1"
                         android:text="Start Scan" />
 
@@ -45,7 +45,7 @@
                         android:id="@+id/disconnectButton"
                         style="@style/darkButton"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
+                        android:layout_height="40dp"
                         android:layout_weight="1"
                         android:text="Disconnect" />
                 </LinearLayout>
