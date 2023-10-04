@@ -1,14 +1,12 @@
 
-package com.atakmap.android.ble_forwarder;
+package com.atakmap.android.ble_forwarder.plugin;
 
 import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_RESPONSE_START_DELIMITER_STRING;
-import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING;
 
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
@@ -17,20 +15,14 @@ import android.widget.Button;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
-import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
-import com.atakmap.android.ble_forwarder.plugin.R;
 import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
-import com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer;
-import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
 import com.atakmap.android.ble_forwarder.util.CotUtils;
 import com.atakmap.android.ble_forwarder.util.FileNameAndBytes;
 import com.atakmap.android.ble_forwarder.util.Utils;
-import com.atakmap.android.dropdown.DropDown;
-import com.atakmap.android.dropdown.DropDownReceiver;
-import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.log.Log;
 import com.google.gson.Gson;
 
@@ -39,20 +31,27 @@ import java.io.IOException;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 
-/**
- * MainDropDownReceiver displays a menu containing information about the current missions,
- * as well as the next task and its due date, among other things
- */
-public class MainDropDownReceiver extends DropDownReceiver
-        implements DropDown.OnStateListener, CoTServerThread.NewCotCallback,
-        NewCotDequeuer.NewCotDequeuedCallback,
-        TAKBLEManager.TAKBLEManagerCallbacks {
+import gov.tak.api.plugin.IPlugin;
+import gov.tak.api.plugin.IServiceController;
+import gov.tak.api.ui.IHostUIService;
+import gov.tak.api.ui.Pane;
+import gov.tak.api.ui.PaneBuilder;
+import gov.tak.api.ui.ToolbarItem;
+import gov.tak.api.ui.ToolbarItemAdapter;
+import gov.tak.platform.marshal.MarshalManager;
 
-    public static final String TAG = MainDropDownReceiver.class.getSimpleName();
+public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread.NewCotCallback,
+        com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer.NewCotDequeuedCallback,
+        com.atakmap.android.ble_forwarder.ble.TAKBLEManager.TAKBLEManagerCallbacks {
 
-    public static final String SHOW_PLUGIN = MainDropDownReceiver.class.getSimpleName() + "SHOW_PLUGIN";
-    public static final String REFRESH_MAIN_SCREEN = MainDropDownReceiver.class.getSimpleName() + "REFRESH_MAIN_SCREEN";
-    private final View templateView;
+    public static final String TAG = PluginTemplate.class.getSimpleName();
+
+    IServiceController serviceController;
+    Context pluginContext;
+    IHostUIService uiService;
+    ToolbarItem toolbarItem;
+    Pane templatePane;
+    View templateView;
 
     Thread peripheralLoggerThread;
     Thread centralLoggerThread;
@@ -72,12 +71,12 @@ public class MainDropDownReceiver extends DropDownReceiver
 
     // listens for CoT's from local ATAK instance and sends them to NewCotDequeuer,
     // sends CoT's received over BLE to local ATAK instance
-    private final CoTServerThread cotServer;
+    CoTServerThread cotServer;
     // sends CoT's over BLE connection using TAKBLEManager
-    private static NewCotDequeuer newCotDequeuer;
+    private static com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer newCotDequeuer;
     // handles scanning for BLE devices, connecting, sending data over BLE connection,
     // receiving data over BLE connection
-    TAKBLEManager bleManager;
+    com.atakmap.android.ble_forwarder.ble.TAKBLEManager bleManager;
 
     public static final String SERVER_STATUS_DOWN = "DOWN";
     public static final String SERVER_STATUS_UP = "UP";
@@ -100,113 +99,180 @@ public class MainDropDownReceiver extends DropDownReceiver
     }
 
     public interface SyncContentCallback {
-        void result(FileNameAndBytes fileNameAndBytes);
+        void result(com.atakmap.android.ble_forwarder.util.FileNameAndBytes fileNameAndBytes);
     }
 
-    /**************************** CONSTRUCTOR *****************************/
-
-
-    public MainDropDownReceiver(final MapView mapView,
-                                final Context context) {
-        super(mapView);
-
-        templateView = PluginLayoutInflater.inflate(context,
-                R.layout.main_layout, null);
-
-        handler = new Handler(Looper.getMainLooper());
-
-        this.peripheralLoggerThread = new Thread(new PeripheralLogger());
-        this.peripheralLoggerThread.start();
-        this.centralLoggerThread = new Thread(new CentralLogger());
-        this.centralLoggerThread.start();
-
-        peripheralLogsButton = templateView.findViewById(R.id.peripheralLogsButton);
-        peripheralLogsButton.setText(R.string.hide_peripheral_logs);
-        peripheralLogsScrollView = templateView.findViewById(R.id.peripheralLogsScrollView);
-        peripheralLogsButton.setOnClickListener(view -> {
-            if (peripheralLogsScrollView.getVisibility() == View.VISIBLE) {
-                peripheralLogsButton.setText(R.string.show_peripheral_logs);
-                peripheralLogsScrollView.setVisibility(View.INVISIBLE);
-            } else {
-                peripheralLogsButton.setText(R.string.hide_peripheral_logs);
-                peripheralLogsScrollView.setVisibility(View.VISIBLE);
-            }
-        });
-
-        centralLogsButton = templateView.findViewById(R.id.centralLogsButton);
-        centralLogsButton.setText(R.string.hide_central_logs);
-        centralLogsScrollView = templateView.findViewById(R.id.centralLogsScrollView);
-        centralLogsButton.setOnClickListener(view -> {
-            if (centralLogsScrollView.getVisibility() == View.VISIBLE) {
-                centralLogsButton.setText(R.string.show_central_logs);
-                centralLogsScrollView.setVisibility(View.INVISIBLE);
-            } else {
-                centralLogsButton.setText(R.string.hide_central_logs);
-                centralLogsScrollView.setVisibility(View.VISIBLE);
-            }
-        });
-
-        Log.d(TAG, "Creating ble manager.");
-
-        bleManager = new TAKBLEManager(
-                peripheralLogMessages, centralLogMessages,
-                this
-        );
-
-        Log.d(TAG, "Trying to do ble setup.");
-
-        if (!bleManager.initialize()) {
-            Log.w(TAG, "Failed bluetooth related setup.");
-            peripheralLogMessages.add("Failed bluetooth related setup.");
-            centralLogMessages.add("Failed bluetooth related setup.");
-        } else {
-            Log.d(TAG, "Successfully fnished bluetooth related setup.");
+    public PluginTemplate(IServiceController serviceController) {
+        this.serviceController = serviceController;
+        final PluginContextProvider ctxProvider = serviceController
+                .getService(PluginContextProvider.class);
+        if (ctxProvider != null) {
+            pluginContext = ctxProvider.getPluginContext();
+            pluginContext.setTheme(R.style.ATAKPluginTheme);
         }
 
-        Log.d(TAG, "Got past ble setup.");
+        // obtain the UI service
+        uiService = serviceController.getService(IHostUIService.class);
 
-        peripheralLogTextView = templateView.findViewById(R.id.textView);
-        centralLogTextView = templateView.findViewById(R.id.serverLogs);
-        startScanButton = templateView.findViewById(R.id.startScanButton);
-        startScanButton.setOnClickListener(view -> {
-            bleManager.startScanning();
-            startScanButton.setEnabled(false);
-        });
+        // initialize the toolbar button for the plugin
 
-        disconnectButton = templateView.findViewById(R.id.disconnectButton);
-        disconnectButton.setEnabled(false);
-        disconnectButton.setOnClickListener(view -> bleManager.disconnect());
+        // create the button
+        toolbarItem = new ToolbarItem.Builder(
+                pluginContext.getString(R.string.app_name),
+                MarshalManager.marshal(
+                        pluginContext.getResources().getDrawable(R.drawable.ic_launcher),
+                        android.graphics.drawable.Drawable.class,
+                        gov.tak.api.commons.graphics.Bitmap.class))
+                .setListener(new ToolbarItemAdapter() {
+                    @Override
+                    public void onClick(ToolbarItem item) {
+                        showPane();
+                    }
+                })
+                .build();
+    }
 
-        serverStatusTextView = templateView.findViewById(R.id.serverStatus);
-        serverStatusTextView.setText(SERVER_STATUS_DOWN);
-        serverStatusTextView.setTextColor(Color.RED);
+    @Override
+    public void onStart() {
+        // the plugin is starting, add the button to the toolbar
+        if (uiService == null)
+            return;
 
-        connectionStatusTextView = templateView.findViewById(R.id.remoteConnectionStatus);
-        connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
-        connectionStatusTextView.setTextColor(Color.RED);
+        uiService.addToolbarItem(toolbarItem);
+    }
 
-        this.cotServer = new CoTServerThread(8089, this, peripheralLogMessages);
-        Thread cotServerThread = new Thread(cotServer);
-        cotServerThread.start();
+    @Override
+    public void onStop() {
+        // the plugin is stopping, remove the button from the toolbar
+        if (uiService == null)
+            return;
+
+        uiService.removeToolbarItem(toolbarItem);
+    }
+
+    private void showPane() {
+
+        // instantiate the plugin view if necessary
+        if(templatePane == null) {
+            // Remember to use the PluginLayoutInflator if you are actually inflating a custom view
+            // In this case, using it is not necessary - but I am putting it here to remind
+            // developers to look at this Inflator
+
+            templateView = PluginLayoutInflater.inflate(pluginContext,
+                    R.layout.main_layout, null);
+
+            templateView = PluginLayoutInflater.inflate(pluginContext,
+                    R.layout.main_layout, null);
+
+            handler = new Handler(Looper.getMainLooper());
+
+            this.peripheralLoggerThread = new Thread(new PeripheralLogger());
+            this.peripheralLoggerThread.start();
+            this.centralLoggerThread = new Thread(new CentralLogger());
+            this.centralLoggerThread.start();
+
+            peripheralLogsButton = templateView.findViewById(R.id.peripheralLogsButton);
+            peripheralLogsButton.setText(R.string.hide_peripheral_logs);
+            peripheralLogsScrollView = templateView.findViewById(R.id.peripheralLogsScrollView);
+            peripheralLogsButton.setOnClickListener(view -> {
+                if (peripheralLogsScrollView.getVisibility() == View.VISIBLE) {
+                    peripheralLogsButton.setText(R.string.show_peripheral_logs);
+                    peripheralLogsScrollView.setVisibility(View.INVISIBLE);
+                } else {
+                    peripheralLogsButton.setText(R.string.hide_peripheral_logs);
+                    peripheralLogsScrollView.setVisibility(View.VISIBLE);
+                }
+            });
+
+            centralLogsButton = templateView.findViewById(R.id.centralLogsButton);
+            centralLogsButton.setText(R.string.hide_central_logs);
+            centralLogsScrollView = templateView.findViewById(R.id.centralLogsScrollView);
+            centralLogsButton.setOnClickListener(view -> {
+                if (centralLogsScrollView.getVisibility() == View.VISIBLE) {
+                    centralLogsButton.setText(R.string.show_central_logs);
+                    centralLogsScrollView.setVisibility(View.INVISIBLE);
+                } else {
+                    centralLogsButton.setText(R.string.hide_central_logs);
+                    centralLogsScrollView.setVisibility(View.VISIBLE);
+                }
+            });
+
+            Log.d(TAG, "Creating ble manager.");
+
+            bleManager = new com.atakmap.android.ble_forwarder.ble.TAKBLEManager(
+                    peripheralLogMessages, centralLogMessages,
+                    this
+            );
+
+            Log.d(TAG, "Trying to do ble setup.");
+
+            if (!bleManager.initialize()) {
+                Log.w(TAG, "Failed bluetooth related setup.");
+                peripheralLogMessages.add("Failed bluetooth related setup.");
+                centralLogMessages.add("Failed bluetooth related setup.");
+            } else {
+                Log.d(TAG, "Successfully fnished bluetooth related setup.");
+            }
+
+            Log.d(TAG, "Got past ble setup.");
+
+            peripheralLogTextView = templateView.findViewById(R.id.textView);
+            centralLogTextView = templateView.findViewById(R.id.serverLogs);
+            startScanButton = templateView.findViewById(R.id.startScanButton);
+            startScanButton.setOnClickListener(view -> {
+                bleManager.startScanning();
+                startScanButton.setEnabled(false);
+            });
+
+            disconnectButton = templateView.findViewById(R.id.disconnectButton);
+            disconnectButton.setEnabled(false);
+            disconnectButton.setOnClickListener(view -> bleManager.disconnect());
+
+            serverStatusTextView = templateView.findViewById(R.id.serverStatus);
+            serverStatusTextView.setText(SERVER_STATUS_DOWN);
+            serverStatusTextView.setTextColor(Color.RED);
+
+            connectionStatusTextView = templateView.findViewById(R.id.remoteConnectionStatus);
+            connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
+            connectionStatusTextView.setTextColor(Color.RED);
+
+            this.cotServer = new com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread(8089, this, peripheralLogMessages);
+            Thread cotServerThread = new Thread(cotServer);
+            cotServerThread.start();
 
 //        Thread httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
 //        httpServerThread.start();
-        MyRestServer restServer = new MyRestServer(8080, context);
-        try {
-            restServer.start();
-            Log.d(TAG, "Started rest server on port 8080");
-        } catch (IOException e) {
-            Log.e(TAG, "Failure to start http rest server", e);
+            com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer restServer = new com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer(8080, pluginContext);
+            try {
+                restServer.start();
+                Log.d(TAG, "Started rest server on port 8080");
+            } catch (IOException e) {
+                Log.e(TAG, "Failure to start http rest server", e);
+            }
+
+            newCotDequeuer = new com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer(
+                    this,
+                    centralLogMessages,
+                    peripheralLogMessages
+            );
+            Thread cotdequeuerThread = new Thread(newCotDequeuer);
+            cotdequeuerThread.start();
+
+            templatePane = new PaneBuilder(templateView)
+                    // relative location is set to default; pane will switch location dependent on
+                    // current orientation of device screen
+                    .setMetaValue(Pane.RELATIVE_LOCATION, Pane.Location.Default)
+                    // pane will take up 50% of screen width in landscape mode
+                    .setMetaValue(Pane.PREFERRED_WIDTH_RATIO, 0.5D)
+                    // pane will take up 50% of screen height in portrait mode
+                    .setMetaValue(Pane.PREFERRED_HEIGHT_RATIO, 0.5D)
+                    .build();
         }
 
-        newCotDequeuer = new NewCotDequeuer(
-                this,
-                centralLogMessages,
-                peripheralLogMessages
-        );
-        Thread cotdequeuerThread = new Thread(newCotDequeuer);
-        cotdequeuerThread.start();
-
+        // if the plugin pane is not visible, show it!
+        if(!uiService.isPaneVisible(templatePane)) {
+            uiService.showPane(templatePane, null);
+        }
     }
 
     @Override
@@ -330,7 +396,9 @@ public class MainDropDownReceiver extends DropDownReceiver
                 fileBytesString = fileBytesString.substring(0, fileBytesString.length() - "0D0A2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D363337396464633735616261323031632D2D0D0A".length());
                 FileNameAndBytes fileNameAndBytes = new FileNameAndBytes();
                 fileNameAndBytes.setFileName(fileInfo.getName());
-                fileNameAndBytes.setFileBytesString(fileBytesString);
+                byte[] fileBytesStripped = Utils.hexStringToByteArray(fileBytesString);
+                String fileBytesStringBase64 = Utils.encodeToBase64(fileBytesStripped);
+                fileNameAndBytes.setFileBytesString(fileBytesStringBase64);
                 String fileNameAndBytesString = gson.toJson(fileNameAndBytes);
                 newCotDequeuer.addNewCotToQueue(CONTENT_RESPONSE_START_DELIMITER_STRING + fileNameAndBytesString + DELIMITER_STRING);
             } catch (IOException e) {
@@ -379,48 +447,6 @@ public class MainDropDownReceiver extends DropDownReceiver
                 }
             }
         }
-
-    }
-
-    @Override
-    protected void disposeImpl() {
-
-    }
-
-    @Override
-    public void onReceive(Context context, Intent intent) {
-        Log.v(TAG, "MainDropDownReceiver invoked");
-
-        final String action = intent.getAction();
-        if (action == null)
-            return;
-
-        if (action.equals(SHOW_PLUGIN)) {
-
-            Log.d(TAG, "showing plugin drop down for dino");
-            showDropDown(templateView, HALF_WIDTH, FULL_HEIGHT, FULL_WIDTH,
-                    HALF_HEIGHT, false, this);
-
-        }
-    }
-
-    @Override
-    public void onDropDownSelectionRemoved() {
-
-    }
-
-    @Override
-    public void onDropDownClose() {
-
-    }
-
-    @Override
-    public void onDropDownSizeChanged(double width, double height) {
-
-    }
-
-    @Override
-    public void onDropDownVisible(boolean v) {
 
     }
 

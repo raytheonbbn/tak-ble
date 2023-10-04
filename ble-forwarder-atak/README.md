@@ -1,8 +1,10 @@
-BLE Forwarder ATAK Plugin
+TAK CAD ATAK Plugin
+
 _________________________________________________________________
 PURPOSE AND CAPABILITIES
 
-A plugin to forward ATAK data over BLE
+An ATAK plugin for disseminating information related to incidents and responders to those incidents.
+
 _________________________________________________________________
 STATUS
 

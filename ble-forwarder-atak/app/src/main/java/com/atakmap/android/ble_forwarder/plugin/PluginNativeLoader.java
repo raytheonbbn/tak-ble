@@ -1,6 +1,7 @@
 
 package com.atakmap.android.ble_forwarder.plugin;
 
+import java.io.File;
 import android.content.Context;
 
 /**
@@ -29,6 +30,26 @@ public class PluginNativeLoader {
             }
 
         }
+    }
+
+    /**
+    * Security guidance from our recent audit:
+    * Pass an absolute path to System.load(). Avoid System.loadLibrary() because its behavior 
+    * depends upon its implementation which often relies on environmental features that can be 
+    * manipulated. Use only validated, sanitized absolute paths.
+    */
+
+    public static void loadLibrary(final String name) {
+        if (ndl != null) {
+            final String lib = ndl + File.separator
+                    + System.mapLibraryName(name);
+            if (new File(lib).exists()) {
+                System.load(lib);
+            }
+        } else {
+            throw new IllegalArgumentException("NativeLoader not initialized");
+        }
+
     }
 
 }

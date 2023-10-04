@@ -9,7 +9,7 @@
 buildscript {
 
     ext.PLUGIN_VERSION = "1.0"
-    ext.ATAK_VERSION = "4.8.1"
+    ext.ATAK_VERSION = "4.9.0"
 
     def takdevVersion = '2.+'
 
@@ -278,16 +278,14 @@ dependencies {
         exclude group: 'org.jetbrains.kotlin'
     }
 
-    implementation 'org.nanohttpd:nanohttpd:2.3.1'
-
     //}
     implementation files('lib/bbn-atak-utils-debug.aar')
     implementation files('lib/atak-trigger-action-debug.aar')
     implementation files('lib/atak-osppre-shared-1.0.0.aar')
-    implementation files('lib/i-jetty-server-3.2-SNAPSHOT.jar')
 
     // https://mvnrepository.com/artifact/joda-time/joda-time
     implementation group: 'joda-time', name: 'joda-time', version: '2.3'
+
 
     // Recyclerview version depends on some androidx libraries which
     // are supplied by core, so they should be excluded.  Otherwise
@@ -301,6 +299,8 @@ dependencies {
         exclude module: 'customview'
     }
     // ** End ExCheck
+
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }
 
 configurations {

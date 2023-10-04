@@ -3,13 +3,8 @@
 <plugin>
 
     <extension
-        type="transapps.maps.plugin.lifecycle.Lifecycle"
-        impl="com.atakmap.android.ble_forwarder.plugin.BleForwarderLifecycle"
-        singleton="true" />
-
-    <extension
-        type="transapps.maps.plugin.tool.ToolDescriptor"
-        impl="com.atakmap.android.ble_forwarder.plugin.BleForwarderTool"
+        type="gov.tak.api.plugin.IPlugin"
+        impl="com.atakmap.android.ble_forwarder.plugin.PluginTemplate"
         singleton="true" />
 
 </plugin>

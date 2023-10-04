@@ -1,37 +1,25 @@
 package com.atakmap.android.ble_forwarder.takserver_facade;
 
 import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
-import android.os.Bundle;
 import android.util.Log;
 
-import com.atakmap.android.ble_forwarder.MainDropDownReceiver;
+import com.atakmap.android.ble_forwarder.plugin.PluginTemplate;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
 import com.atakmap.android.ble_forwarder.util.FileNameAndBytes;
 import com.atakmap.android.ble_forwarder.util.Utils;
-import com.atakmap.android.importexport.ImportExportMapComponent;
-import com.atakmap.android.importexport.ImportReceiver;
-import com.atakmap.android.importexport.Importer;
-import com.atakmap.android.importexport.ImporterManager;
-import com.atakmap.android.ipc.AtakBroadcast;
-import com.atakmap.comms.CommsMapComponent;
 
-import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -46,7 +34,9 @@ public class MyRestServer extends NanoHTTPD {
     BlockingQueue<String> pendingSyncSearchResults = new ArrayBlockingQueue<>(1000);
     BlockingQueue<FileNameAndBytes> pendingSyncContentResults = new ArrayBlockingQueue<>(1000);
 
-    HashSet<String> syncContentRequestsReceived = new HashSet<>();
+    HashMap<String, String> syncContentRequestsReceived = new HashMap<>();
+
+    boolean contentRequestPending = false;
 
     public MyRestServer(int port, Context context) {
         super(port);
@@ -162,7 +152,7 @@ public class MyRestServer extends NanoHTTPD {
                     "http://127.0.0.1:8080/Marti/sync/content?hash=" + fileHash);
         } else if (session.getUri().equals("/Marti/sync/search")) {
             Log.d(TAG, "got a sync search request, fetching list of files from other device over BLE...");
-            MainDropDownReceiver.sendSyncSearchRequest(new MainDropDownReceiver.SyncSearchCallback() {
+            PluginTemplate.sendSyncSearchRequest(new PluginTemplate.SyncSearchCallback() {
                 @Override
                 public void result(String json) {
                     Log.d(TAG, "Adding json to pending sync search results.");
@@ -183,6 +173,9 @@ public class MyRestServer extends NanoHTTPD {
             }
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
         } else if (session.getUri().equals("/Marti/sync/content")) {
+
+            contentRequestPending = true;
+
             Map<String, List<String>> parameters = session.getParameters();
             List<String> hashList = parameters.get("hash");
             String fileHash = "";
@@ -190,14 +183,16 @@ public class MyRestServer extends NanoHTTPD {
                 fileHash = hashList.get(0);
             }
 
-            if (syncContentRequestsReceived.contains(fileHash)) {
+            if (syncContentRequestsReceived.containsKey(fileHash)) {
+
+                writeFileBytesToAtakDataPackagesDirectory(syncContentRequestsReceived.get(fileHash), fileHash);
+
                 return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
-            } else {
-                syncContentRequestsReceived.add(fileHash);
+
             }
 
-            MainDropDownReceiver.sendSyncContentRequest(fileHash,
-                    new MainDropDownReceiver.SyncContentCallback() {
+            PluginTemplate.sendSyncContentRequest(fileHash,
+                    new PluginTemplate.SyncContentCallback() {
                         @Override
                         public void result(FileNameAndBytes fileNameAndBytes) {
                             Log.d(TAG, "Adding sync content result to queue");
@@ -213,34 +208,11 @@ public class MyRestServer extends NanoHTTPD {
                     String fileName = fileNameAndBytes.getFileName();
                     String fileBytesString = fileNameAndBytes.getFileBytesString();
 
+                    syncContentRequestsReceived.put(fileHash, fileBytesString);
+
                     Log.d(TAG, "File bytes string: " + fileBytesString);
 
-                    byte[] fileBytes = Utils.hexStringToByteArray(fileBytesString);
-
-                    // Create a temporary file to store the received ZIP content
-                    String filePath = "/sdcard" + "/atak/tools/datapackage" + "/package_" + fileHash + ".zip";
-                    Log.d(TAG, "Writing received package to file path: " + filePath);
-                    File tempFile = new File(filePath);
-                    FileOutputStream fileOutputStream = null;
-                    InputStream inputStream = new ByteArrayInputStream(fileBytes);
-                    try {
-                        fileOutputStream = new FileOutputStream(tempFile);
-
-                        // Read the input stream and write it to the temporary file
-                        byte[] buffer = new byte[1024];
-                        int bytesRead;
-                        while ((bytesRead = inputStream.read(buffer)) != -1) {
-                            fileOutputStream.write(buffer, 0, bytesRead);
-                        }
-
-                        // Close the output stream and input stream
-                        fileOutputStream.close();
-                        inputStream.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-
-                    File f = new File(filePath);
+                    byte[] fileBytes = writeFileBytesToAtakDataPackagesDirectory(fileBytesString, fileHash);
 
 //                    Intent i = new Intent(ImportExportMapComponent.ACTION_IMPORT_DATA);
 //                    i.putExtra(ImportReceiver.EXTRA_URI, Uri.fromFile(f).toString());
@@ -250,7 +222,7 @@ public class MyRestServer extends NanoHTTPD {
 //                    AtakBroadcast.getInstance().sendBroadcast(i);
 //                    Log.d(TAG, "Sending broadcast for import of data");
 
-                    Log.d(TAG, "Sending sync content bytes with name " + fileName + " and length " + fileBytes.length);
+                    Log.d(TAG, "Sending sync content bytes with name " + fileName);
                     Response response = newFixedLengthResponse(Response.Status.OK, "application/x-zip-compressed", new ByteArrayInputStream(fileBytes), fileBytes.length);
                     String contentDisposition = "inline; filename=" + fileName + "\r\n";
                     Log.d(TAG, "Content disposition: " + contentDisposition);
@@ -263,8 +235,41 @@ public class MyRestServer extends NanoHTTPD {
                 Log.e(TAG, "Error waiting for sync search result: " + e.getMessage(), e);
             }
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "");
+
         }
 
         return newFixedLengthResponse("Hello from your REST endpoint!");
+    }
+
+    private byte[] writeFileBytesToAtakDataPackagesDirectory(String fileBytesString, String fileHash) {
+        byte[] fileBytes = Utils.decodeFromBase64(fileBytesString);
+
+        // Create a temporary file to store the received ZIP content
+        String filePath = "/sdcard" + "/atak/tools/datapackage" + "/package_" + fileHash + ".zip";
+        Log.d(TAG, "Writing received package to file path: " + filePath);
+        File tempFile = new File(filePath);
+        if (tempFile.exists()) {
+            return fileBytes;
+        }
+        FileOutputStream fileOutputStream = null;
+        InputStream inputStream = new ByteArrayInputStream(fileBytes);
+        try {
+            fileOutputStream = new FileOutputStream(tempFile);
+
+            // Read the input stream and write it to the temporary file
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                fileOutputStream.write(buffer, 0, bytesRead);
+            }
+
+            // Close the output stream and input stream
+            fileOutputStream.close();
+            inputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return fileBytes;
     }
 }
