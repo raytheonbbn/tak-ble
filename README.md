@@ -1,92 +1,34 @@
-# Ble Forwarder
+# TAK BLE
 
+This is a plugin developed to allow for communication of CoT's and files over Bluetooth Low Energy in ATAK.
 
+In order to use the plugin, the TAK Server connection must be properly set up first.
 
-## Getting started
+## Configuration of TAK Server Connection
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Ensure that your TAK Server connection is set to connect to 127.0.0.1, port 8089, with TCP. The TAK BLE plugin creates a "fake" TAK Server to intercept messages from ATAK to send over BLE, so it requires this connection to be set to properly exchange information.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Setup of Connection
 
-## Add your files
+To use the plugin, you should have two instances of ATAK running with the TAK BLE plugin installed and loaded and the TAK Server connection configured as specified above.
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+Open the TAK BLE plugin on both phones, and press on the "Start Scan" button. This will make the TAK BLE plugin search for nearby devices that also have the TAK BLE plugin, in order to exchange information with them (currently communication is just supported between two instances of ATAK).
 
-```
-cd existing_repo
-git remote add origin https://git.tak.gov/cki-tak/ble-forwarder.git
-git branch -M master
-git push -uf origin master
-```
+If the scan successfully finds another device and establishes a connection, you should see the "Remote device connected:" label change to "CONNECTED" on the device being connected to. You should also see logs in the "Peripheral Logs" section saying "Found data transfer characteristic, trying to subscribe to notifications...".
 
-## Integrate with your tools
+## Exchanging CoT Information over BLE
 
-- [ ] [Set up project integrations](https://git.tak.gov/cki-tak/ble-forwarder/-/settings/integrations)
+Once the connection is established both ways, you can exchange CoT's over BLE using the chat functionality of ATAK (opening the Contacts page and sending a message to "All Chat Rooms" or directly to the other phone's contact, which should show in the Contacts section since CoT's containing track information should be being exchanged over BLE automatically).
 
-## Collaborate with your team
+You can also try exchanging CoT information by dropping a point, and then sending that point to the other device's contact, again using functionality built into ATAK.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+## Exchanging Files over BLE
 
-## Test and Deploy
+You can exchange files over BLE by using the built in "Data Packages" tool in ATAK, which allows you to create a Data Package and send it to your TAK Server connection, and also download available data packages from your TAK Server connection.
 
-Use the built-in continuous integration in GitLab.
+To do the file exchange over BLE, you can use the same process by which you would exchange files in regular ATAK:
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+1. On device A, you can create a data package (which may contain shape data, files, overlays, etc).
+2. On device A, you can press the "Send" button for the data package and send it to the TAK Server connection (which should be the configuration mentioned in the "Configuration of TAK Server Connection" section of this README).
+3. On device B, you can press the download button on the Data Package page (which is next to the button for creating a Data Package), and select the TAK Server connection you configured to download files from it - this will retrieve a list of available files from device A over BLE.
+4. On Device B, you should see a query for available data packages load, and then see a page displaying available data packages - you can select the data package of interest and press the "Download" button. This will download the data package from device A over BLE.
