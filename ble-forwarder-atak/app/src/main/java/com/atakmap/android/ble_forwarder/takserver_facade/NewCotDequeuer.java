@@ -21,6 +21,8 @@
 
 package com.atakmap.android.ble_forwarder.takserver_facade;
 
+import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
+import com.atakmap.android.ble_forwarder.plugin.PluginTemplate;
 import com.atakmap.coremap.log.Log;
 
 import java.util.Queue;
@@ -29,24 +31,30 @@ import java.util.concurrent.ArrayBlockingQueue;
 public class NewCotDequeuer implements Runnable {
 
     public interface NewCotDequeuedCallback {
-        void newCotSubstringDequeued(String newCotSubstring);
+        void newCotSubstringDequeuedForCentrals(String newCotSubstring);
+        void newCotDequeuedForPeripheral(String newCot);
     }
 
-    public static final int READ_SIZE = 511;
+    private int currentReadSize = -1;
 
     public static final String TAG = NewCotDequeuer.class.getSimpleName();
 
-    Queue<String> centralLogMessages;
     Queue<String> peripheralLogMessages;
+    Queue<String> centralLogMessages;
     NewCotDequeuedCallback callback;
     Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
+    PluginTemplate.DEVICE_MODE deviceMode = PluginTemplate.DEVICE_MODE.NONE_SELECTED;
 
     public NewCotDequeuer(NewCotDequeuedCallback callback,
-                          Queue<String> centralLogMessages,
-                          Queue<String> peripheralLogMessages) {
+                          Queue<String> peripheralLogMessages,
+                          Queue<String> centralLogMessages) {
         this.callback = callback;
-        this.centralLogMessages = centralLogMessages;
         this.peripheralLogMessages = peripheralLogMessages;
+        this.centralLogMessages = centralLogMessages;
+    }
+
+    public void setDeviceMode(PluginTemplate.DEVICE_MODE deviceMode) {
+        this.deviceMode = deviceMode;
     }
 
     public void addNewCotToQueue(String newCot) {
@@ -56,33 +64,68 @@ public class NewCotDequeuer implements Runnable {
     @Override
     public void run() {
         while (true) {
-            String newCot = newCotQueue.poll();
-            if (newCot != null) {
-                centralLogMessages.add("Got new cot from local ATAK");
-                Log.d(TAG, "dequeuing new cot: " + newCot);
-                for (int i = 0; i < newCot.length(); i += READ_SIZE) {
-                    try {
-                        Thread.sleep(300);
-                    } catch (InterruptedException e) {
-                        // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
-                        // then that means we are getting data in the middle of a CoT that we didn't get the start of -
-                        // just ignore all this data
-                        peripheralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
+            if (currentReadSize != -1) {
+                String newCot = newCotQueue.poll();
+                if (newCot != null) {
+                    if (deviceMode.equals(PluginTemplate.DEVICE_MODE.PERIPHERAL_MODE)) {
+                        peripheralLogMessages.add("Got new cot from local ATAK");
+                        Log.d(TAG, "dequeuing new cot: " + newCot);
+                        for (int i = 0; i < newCot.length(); i += currentReadSize) {
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException e) {
+                                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                                // then that means we are getting data in the middle of a CoT that we didn't get the start of -
+                                // just ignore all this data
+                                centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
 
-                        Log.e(TAG, "interrupted", e);
-                    }
-                    int lastIndex = i + READ_SIZE;
-                    if (lastIndex > newCot.length()) {
-                        lastIndex = newCot.length();
-                    }
-                    String cotSubstring = newCot.substring(i, lastIndex);
-                    Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
-                    callback.newCotSubstringDequeued(cotSubstring);
+                                Log.e(TAG, "interrupted", e);
+                            }
+                            int lastIndex = i + currentReadSize;
+                            if (lastIndex > newCot.length()) {
+                                lastIndex = newCot.length();
+                            }
+                            String cotSubstring = newCot.substring(i, lastIndex);
+                            Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
+                            callback.newCotSubstringDequeuedForCentrals(cotSubstring);
+                        }
+                    } else if (deviceMode.equals(PluginTemplate.DEVICE_MODE.CENTRAL_MODE)) {
+                        peripheralLogMessages.add("Got new cot from local ATAK");
+                        Log.d(TAG, "dequeuing new cot: " + newCot);
+                        for (int i = 0; i < newCot.length(); i += currentReadSize) {
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException e) {
+                                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                                // then that means we are getting data in the middle of a CoT that we didn't get the start of -
+                                // just ignore all this data
+                                centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
 
+                                Log.e(TAG, "interrupted", e);
+                            }
+                            int lastIndex = i + currentReadSize;
+                            if (lastIndex > newCot.length()) {
+                                lastIndex = newCot.length();
+                            }
+                            String cotSubstring = newCot.substring(i, lastIndex);
+                            Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
+                            callback.newCotDequeuedForPeripheral(cotSubstring);
+                        }
+
+                    }
                 }
-
+            } else {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Log.w(TAG, "Not trying to deqeue CoT's for sending until mtu negotiated...");
+                }
             }
         }
+    }
+
+    public void setMtu(int mtu) {
+        currentReadSize = mtu - TAKBLEManager.READ_VS_MTU_DISCREPANCY;
     }
 }
 

@@ -23,8 +23,6 @@ package com.atakmap.android.ble_forwarder.ble;
 
 import static android.content.Context.BLUETOOTH_SERVICE;
 
-import static com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer.READ_SIZE;
-
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -68,36 +66,54 @@ public class TAKBLEManager {
 
     public static final String TAG = TAKBLEManager.class.getSimpleName();
 
+    public static final int DEFAULT_MTU_SIZE = 512;
+
+    // I've found that there are issues when sending the MTU between devices - if
+    // devices send less than the MTU there are no issues, so I have been making
+    // the central send messages with READ_VS_MTU_DISCREPANCY less than the MTU size
+    public static final int READ_VS_MTU_DISCREPANCY = 10;
+
+    private int currentMtu = DEFAULT_MTU_SIZE;
+    private int currentReadSize = -1;
+
     public interface TAKBLEManagerCallbacks {
 
-        // the BLE central server hosted on this device is up
-        void centralUp();
+        // the BLE peripheral server hosted on this device is up
+        void peripheralUp();
 
-        // remote peripheral is connected to central hosted on this device
-        void remotePeripheralConnected();
-        // remote peripheral is connecting to central hosted on this device
-        void remotePeripheralConnecting();
-        // remote peripheral is disconnected from central hosted on this device
-        void remotePeripiheralDisconnected();
+        // remote central is connected to peripheral hosted on this device
+        void remoteCentralConnected();
+        // remote central is connecting to peripheral hosted on this device
+        void remoteCentralConnecting();
+        // remote central is disconnected from peripheral hosted on this device
+        void remoteCentralDisconnected();
 
-        // peripheral on this device is disconnected from central hosted on other device
-        void disconnectedFromRemoteCentral();
-        // peripheral on this device is connected to central hosted on other device
-        void connectedToRemoteCentral();
+        // central on this device is disconnected from peripheral hosted on other device
+        void disconnectedFromRemotePeripheral();
+        // central on this device is connected to peripheral hosted on other device
+        void connectedToRemotePeripheral();
 
         void scanFinished();
 
         void receivedStringOverBLE(String receivedValue);
+
+        void newMtuNegotiated(int newMtu);
+
+        void bluetoothAdapterOn();
+
+        void startedAdvertising();
+
+        void stoppedAdvertising();
     }
 
-    Queue<String> peripheralLogMessages;
     Queue<String> centralLogMessages;
+    Queue<String> peripheralLogMessages;
     TAKBLEManagerCallbacks callbacks;
 
-    public TAKBLEManager(Queue<String> peripheralLogMessages, Queue<String> centralLogMessages,
+    public TAKBLEManager(Queue<String> centralLogMessages, Queue<String> peripheralLogMessages,
                          TAKBLEManagerCallbacks callbacks) {
-        this.peripheralLogMessages = peripheralLogMessages;
         this.centralLogMessages = centralLogMessages;
+        this.peripheralLogMessages = peripheralLogMessages;
         this.callbacks = callbacks;
     }
 
@@ -111,6 +127,8 @@ public class TAKBLEManager {
     private final Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
 
     boolean mtuNegotiated = false;
+    boolean isAdvertising = false;
+    boolean bluetoothAdapterOn = false;
 
     @SuppressLint("MissingPermission")
     public boolean initialize() {
@@ -119,10 +137,10 @@ public class TAKBLEManager {
         // We can't continue without proper Bluetooth support
         if (!checkBluetoothSupport(bluetoothAdapter)) {
             Log.e(TAG, "NO BLUETOOTH SUPPORT!");
-            centralLogMessages.add("FOUND THAT THERE WAS NO BLUETOOTH SUPPORT!!!:");
+            peripheralLogMessages.add("FOUND THAT THERE WAS NO BLUETOOTH SUPPORT!!!:");
             return false;
         } else {
-            centralLogMessages.add("Found that there was bluetooth support.");
+            peripheralLogMessages.add("Found that there was bluetooth support.");
             Log.d(TAG, "found that there was bluetooth support");
         }
 
@@ -132,14 +150,12 @@ public class TAKBLEManager {
         if (!bluetoothAdapter.isEnabled()) {
             Log.d(TAG, "Bluetooth is currently disabled...enabling");
             bluetoothAdapter.enable();
-            centralLogMessages.add("Enabling bluetooth...");
+            peripheralLogMessages.add("Enabling bluetooth...");
         } else {
-            Log.d(TAG, "Bluetooth enabled...starting services");
-            centralLogMessages.add("Bluetooth enabled, starting services...");
-            startAdvertising();
-            startServer();
-
+            Log.d(TAG, "Bluetooth enabled.");
+            peripheralLogMessages.add("Bluetooth enabled.");
             mBluetoothScanner = mBluetoothManager.getAdapter().getBluetoothLeScanner();
+            bluetoothAdapterOn = true;
         }
 
         return true;
@@ -158,7 +174,15 @@ public class TAKBLEManager {
         bleScannerThread.start();
     }
 
-    public void sendDataToConnectedDevices(String s) {
+    public void sendDataToConnectedPeripheral(String s) {
+        if (mtuNegotiated) {
+            sendDataToPeripheral(s);
+        } else {
+            Log.w(TAG, "Not sending data to peripheral, mtu not negotiated yet!");
+        }
+    }
+
+    public void sendDataToConnectedCentrals(String s) {
         if (mtuNegotiated) {
             notifyRegisteredDevices(s);
         } else {
@@ -177,11 +201,11 @@ public class TAKBLEManager {
                 List<UUID> serviceUUIDs = BLEUtil.getServiceUUIDsList(result);
                 Log.d(TAG, "Device had service uuids: " + serviceUUIDs);
                 if (serviceUUIDs.contains(TimeProfile.TIME_SERVICE)) {
-                    peripheralLogMessages.add("Found device with service uuid " + TimeProfile.TIME_SERVICE);
+                    centralLogMessages.add("Found device with service uuid " + TimeProfile.TIME_SERVICE);
                     mBluetoothScanner.stopScan(this);
 
                     if (mBluetoothGatt == null) {
-                        peripheralLogMessages.add("Found that no connection has been made yet, connecting to device.");
+                        centralLogMessages.add("Found that no connection has been made yet, connecting to device.");
                         mBluetoothGatt = result.getDevice().connectGatt(MapView.getMapView().getContext(), false, btleGattCallback);
                     }
                 }
@@ -192,19 +216,19 @@ public class TAKBLEManager {
         @Override
         public void run() {
             Log.d(TAG, "Starting scan for ble devices");
-            peripheralLogMessages.add("Starting scan for BLE devices...");
+            centralLogMessages.add("Starting scan for BLE devices...");
 
             mBluetoothScanner.startScan(leScanCallback);
 
             try {
-                Thread.sleep(5000);
+                Thread.sleep(30000);
             } catch (InterruptedException e) {
                 Log.e(TAG, "Interrupted", e);
             }
 
             mBluetoothScanner.stopScan(leScanCallback);
             Log.d(TAG, "Stopping scan for ble devices");
-            peripheralLogMessages.add("Stopping scan for ble devices.");
+            centralLogMessages.add("Stopping scan for ble devices.");
             if (mBluetoothGatt == null) {
                 callbacks.scanFinished();
             }
@@ -244,12 +268,14 @@ public class TAKBLEManager {
 
             switch (state) {
                 case BluetoothAdapter.STATE_ON:
-                    startAdvertising();
-                    startServer();
+                    bluetoothAdapterOn = true;
+                    mBluetoothScanner = mBluetoothManager.getAdapter().getBluetoothLeScanner();
+                    callbacks.bluetoothAdapterOn();
                     break;
                 case BluetoothAdapter.STATE_OFF:
-                    stopServer();
+                    bluetoothAdapterOn = false;
                     stopAdvertising();
+                    stopServer();
                     break;
                 default:
                     // Do nothing
@@ -258,14 +284,18 @@ public class TAKBLEManager {
         }
     };
 
+    public boolean isAdvertising() {
+        return isAdvertising;
+    }
+
     /**
      * Begin advertising over Bluetooth that this device is connectable
      * and supports the Current Time Service.
      */
     @SuppressLint("MissingPermission")
-    private void startAdvertising() {
+    public void startAdvertising() {
         Log.d(TAG, "starting advertising");
-        centralLogMessages.add("Starting BLE advertising");
+        peripheralLogMessages.add("Starting BLE advertising");
         BluetoothAdapter bluetoothAdapter = mBluetoothManager.getAdapter();
         mBluetoothLeAdvertiser = bluetoothAdapter.getBluetoothLeAdvertiser();
         if (mBluetoothLeAdvertiser == null) {
@@ -274,7 +304,7 @@ public class TAKBLEManager {
         }
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
                 .setConnectable(true)
                 .setTimeout(0)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
@@ -286,6 +316,8 @@ public class TAKBLEManager {
                 .addServiceUuid(new ParcelUuid(TimeProfile.TIME_SERVICE))
                 .build();
 
+        isAdvertising = true;
+        callbacks.startedAdvertising();
         mBluetoothLeAdvertiser
                 .startAdvertising(settings, data, mAdvertiseCallback);
     }
@@ -294,9 +326,10 @@ public class TAKBLEManager {
      * Stop Bluetooth advertisements.
      */
     @SuppressLint("MissingPermission")
-    private void stopAdvertising() {
+    public void stopAdvertising() {
         if (mBluetoothLeAdvertiser == null) return;
-
+        isAdvertising = false;
+        callbacks.stoppedAdvertising();
         mBluetoothLeAdvertiser.stopAdvertising(mAdvertiseCallback);
     }
 
@@ -307,20 +340,31 @@ public class TAKBLEManager {
     @SuppressLint("MissingPermission")
     private void startServer() {
         Log.d(TAG, "starting server");
-        centralLogMessages.add("Starting BLE central server...");
+        peripheralLogMessages.add("Starting BLE peripheral server...");
         mBluetoothGattServer = mBluetoothManager.openGattServer(MapView.getMapView().getContext(), mGattServerCallback);
         if (mBluetoothGattServer == null) {
             Log.w(TAG, "Unable to create GATT server");
-            centralLogMessages.add("Unable to start GATT server.");
+            peripheralLogMessages.add("Unable to start GATT server.");
             return;
         } else {
-            centralLogMessages.add("Successfully started BLE server.");
-            callbacks.centralUp();
+            peripheralLogMessages.add("Successfully started BLE server.");
+            callbacks.peripheralUp();
         }
 
         mBluetoothGattServer.addService(TimeProfile.createTimeService());
-        centralLogMessages.add("Added service for data transfer.");
+        peripheralLogMessages.add("Added service for data transfer.");
 
+    }
+
+    public void startPeripheralServer() {
+        if (bluetoothAdapterOn) {
+            Log.d(TAG, "Starting peripheral server...");
+            peripheralLogMessages.add("Starting peripheral server...");
+            startAdvertising();
+            startServer();
+        } else {
+            Log.w(TAG, "Tried to start peripheral server but bluetooth adapter is not on.");
+        }
     }
 
     /**
@@ -360,9 +404,9 @@ public class TAKBLEManager {
         }
 
         byte[] stringBytes = string.getBytes(StandardCharsets.UTF_8);
-        centralLogMessages.add("Updating connected devices with new string:\n" + string);
+        peripheralLogMessages.add("Updating connected devices with new string:\n" + string);
         Log.d(TAG, "Updating connected devices with new string:\n" + string);
-        centralLogMessages.add("Length of new string: " + stringBytes.length);
+        peripheralLogMessages.add("Length of new string: " + stringBytes.length);
 
         //Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
         BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
@@ -375,6 +419,19 @@ public class TAKBLEManager {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private void sendDataToPeripheral(String string) {
+
+        BluetoothGattCharacteristic localTimeCharacteristic =
+                mBluetoothGatt.getService(TimeProfile.TIME_SERVICE)
+                        .getCharacteristic(TimeProfile.LOCAL_TIME_INFO);
+
+        localTimeCharacteristic.setValue(string);
+
+        mBluetoothGatt.writeCharacteristic(localTimeCharacteristic);
+
+    }
+
     /**
      * Callback to handle incoming requests to the GATT server.
      * All read/write requests for characteristics and descriptors are handled here.
@@ -385,18 +442,18 @@ public class TAKBLEManager {
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                centralLogMessages.add("BluetoothDevice CONNECTED: " + device.getAddress());
-                callbacks.remotePeripheralConnected();
+                peripheralLogMessages.add("BluetoothDevice CONNECTED: " + device.getAddress());
+                callbacks.remoteCentralConnected();
 
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                centralLogMessages.add("BluetoothDevice DISCONNECTED: " + device.getAddress());
+                peripheralLogMessages.add("BluetoothDevice DISCONNECTED: " + device.getAddress());
                 //Remove device from any active subscriptions
                 mRegisteredDevices.remove(device);
-                callbacks.remotePeripiheralDisconnected();
+                callbacks.remoteCentralDisconnected();
 
             } else if (newState == BluetoothProfile.STATE_CONNECTING) {
-                centralLogMessages.add("Detected device in connecting state: " + device.getAddress());
-                callbacks.remotePeripheralConnecting();
+                peripheralLogMessages.add("Detected device in connecting state: " + device.getAddress());
+                callbacks.remoteCentralConnecting();
 
             }
         }
@@ -478,6 +535,7 @@ public class TAKBLEManager {
                             0,
                             null);
                 }
+
             } else {
                 Log.w(TAG, "Unknown descriptor write request");
                 if (responseNeeded) {
@@ -493,7 +551,29 @@ public class TAKBLEManager {
         @Override
         public void onMtuChanged(BluetoothDevice device, int mtu) {
             Log.d(TAG, "Mtu changed!");
+            callbacks.newMtuNegotiated(mtu);
+            currentReadSize = mtu - READ_VS_MTU_DISCREPANCY;
             mtuNegotiated = true;
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+            super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
+
+            if (characteristic.getUuid().equals(TimeProfile.LOCAL_TIME_INFO)) {
+
+                Log.d(TAG, "Got write to local time profile.");
+                String readValue = new String(value, StandardCharsets.UTF_8);
+                Log.d(TAG, "Value received: " + readValue);
+
+                callbacks.receivedStringOverBLE(readValue);
+
+            }
+
+            if (responseNeeded) {
+                mBluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
+            }
         }
     };
 
@@ -523,19 +603,19 @@ public class TAKBLEManager {
             System.out.println(newState);
             switch (newState) {
                 case 0:
-                    peripheralLogMessages.add("Disconnected from device.");
-                    callbacks.disconnectedFromRemoteCentral();
+                    centralLogMessages.add("Disconnected from device.");
+                    callbacks.disconnectedFromRemotePeripheral();
                     break;
                 case 2:
-                    peripheralLogMessages.add("Connected to device with address: " + gatt.getDevice().getAddress());
-                    callbacks.connectedToRemoteCentral();
+                    centralLogMessages.add("Connected to device with address: " + gatt.getDevice().getAddress());
+                    callbacks.connectedToRemotePeripheral();
 
                     // discover services and characteristics for this device
                     mBluetoothGatt.discoverServices();
 
                     break;
                 default:
-                    peripheralLogMessages.add("Encountered unknown state with device!");
+                    centralLogMessages.add("Encountered unknown state with device!");
                     break;
             }
         }
@@ -547,13 +627,13 @@ public class TAKBLEManager {
             if (status == BluetoothGatt.GATT_SUCCESS) {
 
                 Log.d(TAG, "Successfully discovered services for connected device.");
-                peripheralLogMessages.add("Discovered services for connected device.");
+                centralLogMessages.add("Discovered services for connected device.");
 
                 Log.d(TAG, "requesting MTU");
-                mBluetoothGatt.requestMtu(READ_SIZE+1);
+                mBluetoothGatt.requestMtu(currentMtu);
 
             } else {
-                peripheralLogMessages.add("Failed to discover services: " + status);
+                centralLogMessages.add("Failed to discover services: " + status);
             }
 
         }
@@ -563,14 +643,14 @@ public class TAKBLEManager {
         public void onCharacteristicRead(BluetoothGatt gatt,
                                          BluetoothGattCharacteristic characteristic,
                                          int status) {
-            peripheralLogMessages.add("onCharacteristicRead with status " + status);
+            centralLogMessages.add("onCharacteristicRead with status " + status);
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                peripheralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
+                centralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
                 String readValue = characteristic.getStringValue(0);
-                if (readValue.length() > READ_SIZE) {
-                    readValue = readValue.substring(0, READ_SIZE);
+                if (readValue.length() > currentReadSize) {
+                    readValue = readValue.substring(0, currentReadSize);
                 }
-                peripheralLogMessages.add("Got value: " + readValue);
+                centralLogMessages.add("Got value: " + readValue);
                 Log.d(TAG, "Got value: " + readValue);
                 callbacks.receivedStringOverBLE(readValue);
             }
@@ -580,15 +660,20 @@ public class TAKBLEManager {
         @Override
         public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "Successfully negotiated MTU of " + READ_SIZE);
+                Log.d(TAG, "Successfully negotiated MTU of " + mtu);
+                centralLogMessages.add("Successfully negotiated MTU of " + mtu);
+                callbacks.newMtuNegotiated(mtu);
+                currentReadSize = mtu - 10;
+
+                mtuNegotiated = true;
 
                 for (BluetoothGattService service : mBluetoothGatt.getServices()) {
-                    peripheralLogMessages.add("Got service with uuid " + service.getUuid());
+                    centralLogMessages.add("Got service with uuid " + service.getUuid());
                     if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
-                        peripheralLogMessages.add("Found data transfer service, trying to read data...");
+                        centralLogMessages.add("Found data transfer service, trying to read data...");
                         BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);
                         if (characteristic != null) {
-                            peripheralLogMessages.add("Found data transfer characteristic, trying to subscribe to notifications...");
+                            centralLogMessages.add("Found data transfer characteristic, trying to subscribe to notifications...");
                             characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
                             mBluetoothGatt.setCharacteristicNotification(characteristic, true);
                             // 0x2902 org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
@@ -597,7 +682,7 @@ public class TAKBLEManager {
                             descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                             mBluetoothGatt.writeDescriptor(descriptor);
                         } else {
-                            peripheralLogMessages.add("Did not find data transfer characteristic...");
+                            centralLogMessages.add("Did not find data transfer characteristic...");
                         }
                     }
                 }
@@ -606,6 +691,25 @@ public class TAKBLEManager {
                 Log.w(TAG, "Failed to negotiate MTU.");
             }
         }
+
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicWrite(gatt, characteristic, status);
+
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Successfully wrote to local time profile characteristic.");
+            } else {
+                Log.d(TAG, "Failed to write to local time profile characteristic.");
+            }
+        }
     };
+
+    public void setMtu(int newMtu) {
+        currentMtu = newMtu;
+    }
+
+    public boolean isBluetoothAdapterOn() {
+        return bluetoothAdapterOn;
+    }
 
 }

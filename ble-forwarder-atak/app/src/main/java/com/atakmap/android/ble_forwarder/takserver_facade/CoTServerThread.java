@@ -63,16 +63,16 @@ public class CoTServerThread implements Runnable {
     private final static int TIMEOUT_MILLIS = 60000;
 
     public Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
-    public Queue<String> peripheralLogMessages;
+    public Queue<String> centralLogMessages;
 
     NewCotCallback newCotCallback;
 
     public CoTServerThread(int port,
                            NewCotCallback newCotCallback,
-                           Queue<String> peripheralLogMessages) {
+                           Queue<String> centralLogMessages) {
         this.port = port;
         this.newCotCallback = newCotCallback;
-        this.peripheralLogMessages = peripheralLogMessages;
+        this.centralLogMessages = centralLogMessages;
     }
 
     public void addNewOutgoingCot(String outgoingCot) {
@@ -168,7 +168,7 @@ public class CoTServerThread implements Runnable {
                         String outgoingCot = outgoingCotQueue.poll();
                         if (outgoingCot != null) {
                             os.write(outgoingCot.getBytes(StandardCharsets.UTF_8));
-                            peripheralLogMessages.add("Wrote cot received over BLE to local ATAK.");
+                            centralLogMessages.add("Wrote cot received over BLE to local ATAK.");
                         }
                     }
                 }

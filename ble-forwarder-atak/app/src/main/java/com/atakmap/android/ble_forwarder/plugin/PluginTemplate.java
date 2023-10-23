@@ -28,22 +28,31 @@ import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_ST
 import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
+import android.preference.PreferenceManager;
+import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
+import com.atakmap.android.atakutils.MiscUtils;
+import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
 import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
+import com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer;
+import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FileManager;
 import com.atakmap.android.ble_forwarder.takserver_facade.file_manager.FilesInformation;
 import com.atakmap.android.ble_forwarder.util.CotUtils;
 import com.atakmap.android.ble_forwarder.util.FileNameAndBytes;
 import com.atakmap.android.ble_forwarder.util.Utils;
+import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.log.Log;
 import com.google.gson.Gson;
 
@@ -61,32 +70,53 @@ import gov.tak.api.ui.ToolbarItem;
 import gov.tak.api.ui.ToolbarItemAdapter;
 import gov.tak.platform.marshal.MarshalManager;
 
-public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread.NewCotCallback,
-        com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer.NewCotDequeuedCallback,
-        com.atakmap.android.ble_forwarder.ble.TAKBLEManager.TAKBLEManagerCallbacks {
+public class PluginTemplate implements IPlugin,
+        CoTServerThread.NewCotCallback,
+        NewCotDequeuer.NewCotDequeuedCallback,
+        TAKBLEManager.TAKBLEManagerCallbacks {
 
     public static final String TAG = PluginTemplate.class.getSimpleName();
+
+    public enum DEVICE_MODE {
+        NONE_SELECTED,
+        PERIPHERAL_MODE,
+        CENTRAL_MODE
+    }
+
+    SharedPreferences sharedPreferences;
 
     IServiceController serviceController;
     Context pluginContext;
     IHostUIService uiService;
     ToolbarItem toolbarItem;
-    Pane templatePane;
-    View templateView;
+
+    Pane currentPane;
 
     Thread peripheralLoggerThread;
     Thread centralLoggerThread;
 
+    Pane peripheralPane;
+    View peripheralView;
     public TextView peripheralLogTextView;
-    public TextView centralLogTextView;
     public TextView serverStatusTextView;
     public TextView connectionStatusTextView;
+    public Button peripheralLogsButton;
+    public Button toggleAdvertisingButton;
+    public ScrollView peripheralLogsScrollView;
+
+    Pane centralPane;
+    View centralView;
+    public TextView centralLogTextView;
+    public Button centralLogsButton;
+    public ScrollView centralLogsScrollView;
     public Button startScanButton;
     public Button disconnectButton;
-    public Button peripheralLogsButton;
-    public Button centralLogsButton;
-    public ScrollView peripheralLogsScrollView;
-    public ScrollView centralLogsScrollView;
+    public EditText mtuInput;
+
+    Pane templatePane;
+    View templateView;
+    public Button peripheralModeButton;
+    public Button centralModeButton;
 
     Handler handler;
 
@@ -94,10 +124,10 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     // sends CoT's received over BLE to local ATAK instance
     CoTServerThread cotServer;
     // sends CoT's over BLE connection using TAKBLEManager
-    private static com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer newCotDequeuer;
+    private static NewCotDequeuer newCotDequeuer;
     // handles scanning for BLE devices, connecting, sending data over BLE connection,
     // receiving data over BLE connection
-    com.atakmap.android.ble_forwarder.ble.TAKBLEManager bleManager;
+   TAKBLEManager bleManager;
 
     public static final String SERVER_STATUS_DOWN = "DOWN";
     public static final String SERVER_STATUS_UP = "UP";
@@ -105,8 +135,8 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     public static final String REMOTE_DEVICE_NOT_CONNECTED = "NOT CONNECTED";
     public static final String REMOTE_DEVICE_CONNECTING = "CONNECTING";
 
-    public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
     public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
+    public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
 
     public static String receivedCot = "";
 
@@ -114,6 +144,12 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     private static SyncContentCallback currentSyncContentCallback = null;
 
     private static Gson gson = new Gson();
+
+    private DEVICE_MODE deviceMode = DEVICE_MODE.NONE_SELECTED;
+
+    private static final String MTU_SHARED_PREF_KEY = "MTU_SHARED_PREF_KEY";
+
+    boolean bluetoothAdapterOn = false;
 
     public interface SyncSearchCallback {
         void result(String json);
@@ -175,53 +211,21 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
 
         // instantiate the plugin view if necessary
         if(templatePane == null) {
-            // Remember to use the PluginLayoutInflator if you are actually inflating a custom view
-            // In this case, using it is not necessary - but I am putting it here to remind
-            // developers to look at this Inflator
-
-            templateView = PluginLayoutInflater.inflate(pluginContext,
-                    R.layout.main_layout, null);
-
-            templateView = PluginLayoutInflater.inflate(pluginContext,
-                    R.layout.main_layout, null);
 
             handler = new Handler(Looper.getMainLooper());
 
-            this.peripheralLoggerThread = new Thread(new PeripheralLogger());
-            this.peripheralLoggerThread.start();
-            this.centralLoggerThread = new Thread(new CentralLogger());
-            this.centralLoggerThread.start();
-
-            peripheralLogsButton = templateView.findViewById(R.id.peripheralLogsButton);
-            peripheralLogsButton.setText(R.string.hide_peripheral_logs);
-            peripheralLogsScrollView = templateView.findViewById(R.id.peripheralLogsScrollView);
-            peripheralLogsButton.setOnClickListener(view -> {
-                if (peripheralLogsScrollView.getVisibility() == View.VISIBLE) {
-                    peripheralLogsButton.setText(R.string.show_peripheral_logs);
-                    peripheralLogsScrollView.setVisibility(View.INVISIBLE);
-                } else {
-                    peripheralLogsButton.setText(R.string.hide_peripheral_logs);
-                    peripheralLogsScrollView.setVisibility(View.VISIBLE);
-                }
-            });
-
-            centralLogsButton = templateView.findViewById(R.id.centralLogsButton);
-            centralLogsButton.setText(R.string.hide_central_logs);
-            centralLogsScrollView = templateView.findViewById(R.id.centralLogsScrollView);
-            centralLogsButton.setOnClickListener(view -> {
-                if (centralLogsScrollView.getVisibility() == View.VISIBLE) {
-                    centralLogsButton.setText(R.string.show_central_logs);
-                    centralLogsScrollView.setVisibility(View.INVISIBLE);
-                } else {
-                    centralLogsButton.setText(R.string.hide_central_logs);
-                    centralLogsScrollView.setVisibility(View.VISIBLE);
-                }
-            });
-
             Log.d(TAG, "Creating ble manager.");
 
-            bleManager = new com.atakmap.android.ble_forwarder.ble.TAKBLEManager(
-                    peripheralLogMessages, centralLogMessages,
+            newCotDequeuer = new NewCotDequeuer(
+                    this,
+                    peripheralLogMessages,
+                    centralLogMessages
+            );
+            Thread cotdequeuerThread = new Thread(newCotDequeuer);
+            cotdequeuerThread.start();
+
+            bleManager = new TAKBLEManager(
+                    centralLogMessages, peripheralLogMessages,
                     this
             );
 
@@ -229,55 +233,65 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
 
             if (!bleManager.initialize()) {
                 Log.w(TAG, "Failed bluetooth related setup.");
-                peripheralLogMessages.add("Failed bluetooth related setup.");
                 centralLogMessages.add("Failed bluetooth related setup.");
+                peripheralLogMessages.add("Failed bluetooth related setup.");
             } else {
-                Log.d(TAG, "Successfully fnished bluetooth related setup.");
+                Log.d(TAG, "Successfully finished bluetooth related setup.");
             }
 
             Log.d(TAG, "Got past ble setup.");
 
-            peripheralLogTextView = templateView.findViewById(R.id.textView);
-            centralLogTextView = templateView.findViewById(R.id.serverLogs);
-            startScanButton = templateView.findViewById(R.id.startScanButton);
-            startScanButton.setOnClickListener(view -> {
-                bleManager.startScanning();
-                startScanButton.setEnabled(false);
+            // set up initial screen UI
+
+            templateView = PluginLayoutInflater.inflate(pluginContext,
+                    R.layout.main_layout, null);
+
+            peripheralModeButton = (Button) templateView.findViewById(R.id.peripheralModeButton);
+            peripheralModeButton.setEnabled(bleManager.isBluetoothAdapterOn());
+
+            peripheralModeButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+
+                            deviceMode = DEVICE_MODE.PERIPHERAL_MODE;
+
+                            newCotDequeuer.setDeviceMode(deviceMode);
+
+                            currentPane = peripheralPane;
+
+                            bleManager.startPeripheralServer();
+
+                            showPane();
+
+                        }
+                    });
+
+                }
             });
 
-            disconnectButton = templateView.findViewById(R.id.disconnectButton);
-            disconnectButton.setEnabled(false);
-            disconnectButton.setOnClickListener(view -> bleManager.disconnect());
+            centralModeButton = (Button) templateView.findViewById(R.id.centralModeButton);
+            centralModeButton.setEnabled(bleManager.isBluetoothAdapterOn());
 
-            serverStatusTextView = templateView.findViewById(R.id.serverStatus);
-            serverStatusTextView.setText(SERVER_STATUS_DOWN);
-            serverStatusTextView.setTextColor(Color.RED);
+            centralModeButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            deviceMode = DEVICE_MODE.CENTRAL_MODE;
 
-            connectionStatusTextView = templateView.findViewById(R.id.remoteConnectionStatus);
-            connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
-            connectionStatusTextView.setTextColor(Color.RED);
+                            newCotDequeuer.setDeviceMode(deviceMode);
 
-            this.cotServer = new com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread(8089, this, peripheralLogMessages);
-            Thread cotServerThread = new Thread(cotServer);
-            cotServerThread.start();
+                            currentPane = centralPane;
 
-//        Thread httpServerThread = new Thread(new HttpServerThread(8080, peripheralLogMessages));
-//        httpServerThread.start();
-            com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer restServer = new com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer(8080, pluginContext);
-            try {
-                restServer.start();
-                Log.d(TAG, "Started rest server on port 8080");
-            } catch (IOException e) {
-                Log.e(TAG, "Failure to start http rest server", e);
-            }
-
-            newCotDequeuer = new com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer(
-                    this,
-                    centralLogMessages,
-                    peripheralLogMessages
-            );
-            Thread cotdequeuerThread = new Thread(newCotDequeuer);
-            cotdequeuerThread.start();
+                            showPane();
+                        }
+                    });
+                }
+            });
 
             templatePane = new PaneBuilder(templateView)
                     // relative location is set to default; pane will switch location dependent on
@@ -288,11 +302,153 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
                     // pane will take up 50% of screen height in portrait mode
                     .setMetaValue(Pane.PREFERRED_HEIGHT_RATIO, 0.5D)
                     .build();
+
+            // set up peripheral mode UI
+
+            peripheralView = PluginLayoutInflater.inflate(pluginContext,
+                    R.layout.peripheral_layout, null);
+
+            peripheralLoggerThread = new Thread(new PeripheralLogger());
+            peripheralLoggerThread.start();
+
+            peripheralLogsButton = peripheralView.findViewById(R.id.peripheralLogsButton);
+            peripheralLogsButton.setText(R.string.hide_peripheral_logs);
+            peripheralLogsScrollView = peripheralView.findViewById(R.id.peripheralLogsScrollView);
+            peripheralLogsButton.setOnClickListener(view -> {
+                if (peripheralLogsScrollView.getVisibility() == View.VISIBLE) {
+                    peripheralLogsButton.setText(R.string.show_peripheral_logs);
+                    peripheralLogsScrollView.setVisibility(View.INVISIBLE);
+                } else {
+                    peripheralLogsButton.setText(R.string.hide_peripheral_logs);
+                    peripheralLogsScrollView.setVisibility(View.VISIBLE);
+                }
+            });
+
+            toggleAdvertisingButton = (Button) peripheralView.findViewById(R.id.toggleAdvertisingButton);
+            if (bleManager.isAdvertising()) {
+                toggleAdvertisingButton.setText(R.string.toggle_advertising_off);
+            } else {
+                toggleAdvertisingButton.setText(R.string.toggle_advertising_on);
+            }
+            toggleAdvertisingButton.setOnClickListener(view -> {
+                if (bleManager.isAdvertising()) {
+                    bleManager.stopAdvertising();
+                    toggleAdvertisingButton.setText(R.string.toggle_advertising_on);
+                } else {
+                    bleManager.startAdvertising();
+                    toggleAdvertisingButton.setText(R.string.toggle_advertising_off);
+                }
+            });
+
+            peripheralLogTextView = peripheralView.findViewById(R.id.serverLogs);
+
+            serverStatusTextView = peripheralView.findViewById(R.id.serverStatus);
+            serverStatusTextView.setText(SERVER_STATUS_DOWN);
+            serverStatusTextView.setTextColor(Color.RED);
+
+            connectionStatusTextView = peripheralView.findViewById(R.id.remoteConnectionStatus);
+            connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
+            connectionStatusTextView.setTextColor(Color.RED);
+
+            peripheralPane = new PaneBuilder(peripheralView)
+                    // relative location is set to default; pane will switch location dependent on
+                    // current orientation of device screen
+                    .setMetaValue(Pane.RELATIVE_LOCATION, Pane.Location.Default)
+                    // pane will take up 50% of screen width in landscape mode
+                    .setMetaValue(Pane.PREFERRED_WIDTH_RATIO, 0.5D)
+                    // pane will take up 50% of screen height in portrait mode
+                    .setMetaValue(Pane.PREFERRED_HEIGHT_RATIO, 0.5D)
+                    .build();
+
+            // set up central mode UI
+
+            centralView = PluginLayoutInflater.inflate(pluginContext,
+                    R.layout.central_layout);
+
+            this.centralLoggerThread = new Thread(new CentralLogger());
+            this.centralLoggerThread.start();
+
+            centralLogsButton = centralView.findViewById(R.id.centralLogsButton);
+            centralLogsButton.setText(R.string.hide_central_logs);
+            centralLogsScrollView = centralView.findViewById(R.id.centralLogsScrollView);
+            centralLogsButton.setOnClickListener(view -> {
+                if (centralLogsScrollView.getVisibility() == View.VISIBLE) {
+                    centralLogsButton.setText(R.string.show_central_logs);
+                    centralLogsScrollView.setVisibility(View.INVISIBLE);
+                } else {
+                    centralLogsButton.setText(R.string.hide_central_logs);
+                    centralLogsScrollView.setVisibility(View.VISIBLE);
+                }
+            });
+
+            mtuInput = centralView.findViewById(R.id.mtuInput);
+            mtuInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+
+            SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(MapView.getMapView().getContext());
+            int mtuSize = sharedPref.getInt(MTU_SHARED_PREF_KEY, TAKBLEManager.DEFAULT_MTU_SIZE);
+            mtuInput.setText(Integer.toString(mtuSize));
+
+            centralLogTextView = centralView.findViewById(R.id.textView);
+            startScanButton = centralView.findViewById(R.id.startScanButton);
+            startScanButton.setOnClickListener(view -> {
+
+                try {
+                    String newMtuString = mtuInput.getText().toString();
+                    int newMtu = Integer.parseInt(newMtuString);
+                    bleManager.setMtu(newMtu);
+
+                    SharedPreferences.Editor edit = sharedPref.edit();
+                    edit.putInt(MTU_SHARED_PREF_KEY, newMtu);
+                    edit.apply();
+
+                } catch (NumberFormatException e) {
+                    Log.w(TAG, "Failed to parse mtu", e);
+                    MiscUtils.toast("Failed to parse mtu, please re-enter. (" + e.getMessage() + ")");
+                    return;
+                }
+
+                bleManager.startScanning();
+                startScanButton.setEnabled(false);
+                mtuInput.setEnabled(false);
+            });
+
+            disconnectButton = centralView.findViewById(R.id.disconnectButton);
+            disconnectButton.setEnabled(false);
+            disconnectButton.setOnClickListener(view -> bleManager.disconnect());
+
+            centralPane = new PaneBuilder(centralView)
+                    // relative location is set to default; pane will switch location dependent on
+                    // current orientation of device screen
+                    .setMetaValue(Pane.RELATIVE_LOCATION, Pane.Location.Default)
+                    // pane will take up 50% of screen width in landscape mode
+                    .setMetaValue(Pane.PREFERRED_WIDTH_RATIO, 0.5D)
+                    // pane will take up 50% of screen height in portrait mode
+                    .setMetaValue(Pane.PREFERRED_HEIGHT_RATIO, 0.5D)
+                    .build();
+
+            // set up cot server
+
+            this.cotServer = new CoTServerThread(8089, this, centralLogMessages);
+            Thread cotServerThread = new Thread(cotServer);
+            cotServerThread.start();
+
+            // set up REST server
+
+            MyRestServer restServer = new MyRestServer(8080, pluginContext);
+            try {
+                restServer.start();
+                Log.d(TAG, "Started rest server on port 8080");
+            } catch (IOException e) {
+                Log.e(TAG, "Failure to start http rest server", e);
+            }
+
+            currentPane = templatePane;
+
         }
 
         // if the plugin pane is not visible, show it!
-        if(!uiService.isPaneVisible(templatePane)) {
-            uiService.showPane(templatePane, null);
+        if(!uiService.isPaneVisible(currentPane)) {
+            uiService.showPane(currentPane, null);
         }
     }
 
@@ -303,12 +459,17 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     }
 
     @Override
-    public void newCotSubstringDequeued(String newCotSubstring) {
-        bleManager.sendDataToConnectedDevices(newCotSubstring);
+    public void newCotSubstringDequeuedForCentrals(String newCotSubstring) {
+        bleManager.sendDataToConnectedCentrals(newCotSubstring);
     }
 
     @Override
-    public void centralUp() {
+    public void newCotDequeuedForPeripheral(String newCot) {
+        bleManager.sendDataToConnectedPeripheral(newCot);
+    }
+
+    @Override
+    public void peripheralUp() {
         handler.post(() -> {
             serverStatusTextView.setText(SERVER_STATUS_UP);
             serverStatusTextView.setTextColor(Color.GREEN);
@@ -316,7 +477,7 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     }
 
     @Override
-    public void remotePeripheralConnected() {
+    public void remoteCentralConnected() {
         handler.post(() -> {
             connectionStatusTextView.setText(REMOTE_DEVICE_CONNECTED);
             connectionStatusTextView.setTextColor(Color.GREEN);
@@ -324,7 +485,7 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     }
 
     @Override
-    public void remotePeripheralConnecting() {
+    public void remoteCentralConnecting() {
         handler.post(() -> {
             connectionStatusTextView.setText(REMOTE_DEVICE_CONNECTING);
             connectionStatusTextView.setTextColor(Color.YELLOW);
@@ -332,7 +493,7 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     }
 
     @Override
-    public void remotePeripiheralDisconnected() {
+    public void remoteCentralDisconnected() {
         handler.post(() -> {
             connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
             connectionStatusTextView.setTextColor(Color.RED);
@@ -340,7 +501,7 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     }
 
     @Override
-    public void disconnectedFromRemoteCentral() {
+    public void disconnectedFromRemotePeripheral() {
         handler.post(() -> {
             disconnectButton.setEnabled(false);
             startScanButton.setEnabled(true);
@@ -348,20 +509,28 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
     }
 
     @Override
-    public void connectedToRemoteCentral() {
+    public void connectedToRemotePeripheral() {
         handler.post(() -> disconnectButton.setEnabled(true));
     }
 
     @Override
     public void scanFinished() {
-        handler.post(() -> startScanButton.setEnabled(true));
+        handler.post(() -> {
+            startScanButton.setEnabled(true);
+            mtuInput.setEnabled(true);
+        });
     }
 
     @Override
     public void receivedStringOverBLE(String receivedValue) {
 
         if (receivedValue.startsWith(START_DELIMITER_STRING)) {
-            peripheralLogMessages.add("Got start of CoT.");
+
+            if (deviceMode.equals(DEVICE_MODE.CENTRAL_MODE)) {
+                centralLogMessages.add("Got start of CoT.");
+            } else if (deviceMode.equals(DEVICE_MODE.PERIPHERAL_MODE)) {
+                peripheralLogMessages.add("Got start of CoT.");
+            }
             //receivedCot = START_DELIMITER_STRING;// + " ";
             receivedCot = receivedValue;
 
@@ -381,13 +550,16 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
                     receivedCot = "";
                 }
             }
-
         }
 
     }
 
     private void processReceivedCoT(String cot) {
-        peripheralLogMessages.add("Received full cot: " + cot);
+        if (deviceMode.equals(DEVICE_MODE.CENTRAL_MODE)) {
+            centralLogMessages.add("Received full cot: " + cot);
+        } else if (deviceMode.equals(DEVICE_MODE.PERIPHERAL_MODE)) {
+            peripheralLogMessages.add("Received full cot: " + cot);
+        }
         Log.d(TAG, "Received full cot: " + cot);
         if (cot.equals(CotUtils.SYNC_SEARCH_FAKE_COT_STRING)) {
             Log.d(TAG, "Got fake cot that signals a sync search from other device - generating JSON response from files that I am currently aware of...");
@@ -481,5 +653,37 @@ public class PluginTemplate implements IPlugin, com.atakmap.android.ble_forwarde
         Log.d(TAG, "Sending cot for sync content request over BLE to other device...");
         newCotDequeuer.addNewCotToQueue(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING + hash + DELIMITER_STRING);
         currentSyncContentCallback = callback;
+    }
+
+    @Override
+    public void newMtuNegotiated(int newMtu) {
+        Log.d(TAG, "Set new cot dequeuer mtu to new mtu " + newMtu);
+        newCotDequeuer.setMtu(newMtu);
+    }
+
+    @Override
+    public void bluetoothAdapterOn() {
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (peripheralModeButton != null) {
+                    peripheralModeButton.setEnabled(true);
+                }
+                if (centralModeButton != null) {
+                    centralModeButton.setEnabled(true);
+                }
+                bluetoothAdapterOn = true;
+            }
+        });
+    }
+
+    @Override
+    public void startedAdvertising() {
+        toggleAdvertisingButton.setText(R.string.toggle_advertising_off);
+    }
+
+    @Override
+    public void stoppedAdvertising() {
+        toggleAdvertisingButton.setText(R.string.toggle_advertising_on);
     }
 }

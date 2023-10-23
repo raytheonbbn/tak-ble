@@ -73,9 +73,8 @@ public class TimeProfile {
 
         // Local Time Information characteristic
         BluetoothGattCharacteristic localTime = new BluetoothGattCharacteristic(LOCAL_TIME_INFO,
-                //Read-only characteristic
-                BluetoothGattCharacteristic.PROPERTY_READ,
-                BluetoothGattCharacteristic.PERMISSION_READ);
+                BluetoothGattCharacteristic.PROPERTY_WRITE,
+                BluetoothGattCharacteristic.PERMISSION_WRITE);
 
         service.addCharacteristic(currentTime);
         service.addCharacteristic(localTime);

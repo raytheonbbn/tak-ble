@@ -44,12 +44,12 @@ public class HttpServerThread implements Runnable {
     ServerSocket serverSocket = null;
 
     public static Queue<String> outgoingHttpQueue = new ArrayBlockingQueue<>(1000);
-    public Queue<String> peripheralLogMessages;
+    public Queue<String> centralLogMessages;
 
     public HttpServerThread(int port,
-                            Queue<String> peripheralLogMessages) {
+                            Queue<String> centralLogMessages) {
         this.port = port;
-        this.peripheralLogMessages = peripheralLogMessages;
+        this.centralLogMessages = centralLogMessages;
     }
 
     public void run() {
@@ -124,7 +124,7 @@ public class HttpServerThread implements Runnable {
                         String outgoingHttp = outgoingHttpQueue.poll();
                         if (outgoingHttp != null) {
                             os.write(outgoingHttp.getBytes(StandardCharsets.UTF_8));
-                            peripheralLogMessages.add("Wrote HTTP received over BLE to local ATAK: " + outgoingHttp);
+                            centralLogMessages.add("Wrote HTTP received over BLE to local ATAK: " + outgoingHttp);
                         }
                     }
                 }
