@@ -35,7 +35,7 @@ public class NewCotDequeuer implements Runnable {
         void newCotDequeuedForPeripheral(String newCot);
     }
 
-    private int currentReadSize = -1;
+    private int blePacketAppDataSize = -1;
 
     public static final String TAG = NewCotDequeuer.class.getSimpleName();
 
@@ -64,54 +64,56 @@ public class NewCotDequeuer implements Runnable {
     @Override
     public void run() {
         while (true) {
-            if (currentReadSize != -1) {
+            if (blePacketAppDataSize != -1) {
                 String newCot = newCotQueue.poll();
                 if (newCot != null) {
-                    if (deviceMode.equals(PluginTemplate.DEVICE_MODE.PERIPHERAL_MODE)) {
-                        peripheralLogMessages.add("Got new cot from local ATAK");
-                        Log.d(TAG, "dequeuing new cot: " + newCot);
-                        for (int i = 0; i < newCot.length(); i += currentReadSize) {
-                            try {
-                                Thread.sleep(1000);
-                            } catch (InterruptedException e) {
-                                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
-                                // then that means we are getting data in the middle of a CoT that we didn't get the start of -
-                                // just ignore all this data
-                                centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
+                    if (newCot != null) {
+                        if (deviceMode.equals(PluginTemplate.DEVICE_MODE.PERIPHERAL_MODE)) {
+                            peripheralLogMessages.add("Got new cot from local ATAK");
+                            Log.d(TAG, "dequeuing new cot: " + newCot);
+                            for (int i = 0; i < newCot.length(); i += blePacketAppDataSize) {
+                                try {
+                                    Thread.sleep(500);
+                                } catch (InterruptedException e) {
+                                    // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                                    // then that means we are getting data in the middle of a CoT that we didn't get the start of -
+                                    // just ignore all this data
+                                    centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
 
-                                Log.e(TAG, "interrupted", e);
+                                    Log.e(TAG, "interrupted", e);
+                                }
+                                int lastIndex = i + blePacketAppDataSize;
+                                if (lastIndex > newCot.length()) {
+                                    lastIndex = newCot.length();
+                                }
+                                String cotSubstring = newCot.substring(i, lastIndex);
+                                Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
+                                callback.newCotSubstringDequeuedForCentrals(cotSubstring);
                             }
-                            int lastIndex = i + currentReadSize;
-                            if (lastIndex > newCot.length()) {
-                                lastIndex = newCot.length();
+                        } else if (deviceMode.equals(PluginTemplate.DEVICE_MODE.CENTRAL_MODE)) {
+                            peripheralLogMessages.add("Got new cot from local ATAK");
+                            Log.d(TAG, "dequeuing new cot: " + newCot);
+                            for (int i = 0; i < newCot.length(); i += blePacketAppDataSize) {
+                                try {
+                                    Thread.sleep(750);
+                                } catch (InterruptedException e) {
+                                    // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                                    // then that means we are getting data in the middle of a CoT that we didn't get the start of -
+                                    // just ignore all this data
+                                    centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
+
+                                    Log.e(TAG, "interrupted", e);
+                                }
+                                int lastIndex = i + blePacketAppDataSize;
+                                if (lastIndex > newCot.length()) {
+                                    lastIndex = newCot.length();
+                                }
+                                String cotSubstring = newCot.substring(i, lastIndex);
+                                Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
+                                callback.newCotDequeuedForPeripheral(cotSubstring);
                             }
-                            String cotSubstring = newCot.substring(i, lastIndex);
-                            Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
-                            callback.newCotSubstringDequeuedForCentrals(cotSubstring);
+
                         }
-                    } else if (deviceMode.equals(PluginTemplate.DEVICE_MODE.CENTRAL_MODE)) {
-                        peripheralLogMessages.add("Got new cot from local ATAK");
-                        Log.d(TAG, "dequeuing new cot: " + newCot);
-                        for (int i = 0; i < newCot.length(); i += currentReadSize) {
-                            try {
-                                Thread.sleep(1000);
-                            } catch (InterruptedException e) {
-                                // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
-                                // then that means we are getting data in the middle of a CoT that we didn't get the start of -
-                                // just ignore all this data
-                                centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
-
-                                Log.e(TAG, "interrupted", e);
-                            }
-                            int lastIndex = i + currentReadSize;
-                            if (lastIndex > newCot.length()) {
-                                lastIndex = newCot.length();
-                            }
-                            String cotSubstring = newCot.substring(i, lastIndex);
-                            Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
-                            callback.newCotDequeuedForPeripheral(cotSubstring);
-                        }
-
                     }
                 }
             } else {
@@ -125,7 +127,7 @@ public class NewCotDequeuer implements Runnable {
     }
 
     public void setMtu(int mtu) {
-        currentReadSize = mtu - TAKBLEManager.READ_VS_MTU_DISCREPANCY;
+        blePacketAppDataSize = mtu - TAKBLEManager.BLE_HEADER_SIZE;
     }
 }
 

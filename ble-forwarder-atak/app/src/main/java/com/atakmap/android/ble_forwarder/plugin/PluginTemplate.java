@@ -113,8 +113,6 @@ public class PluginTemplate implements IPlugin,
     public Button disconnectButton;
     public EditText mtuInput;
 
-    Pane templatePane;
-    View templateView;
     public Button peripheralModeButton;
     public Button centralModeButton;
 
@@ -210,7 +208,7 @@ public class PluginTemplate implements IPlugin,
     private void showPane() {
 
         // instantiate the plugin view if necessary
-        if(templatePane == null) {
+        if(peripheralPane == null) {
 
             handler = new Handler(Looper.getMainLooper());
 
@@ -243,36 +241,20 @@ public class PluginTemplate implements IPlugin,
 
             // set up initial screen UI
 
-            templateView = PluginLayoutInflater.inflate(pluginContext,
-                    R.layout.main_layout, null);
+            deviceMode = DEVICE_MODE.PERIPHERAL_MODE;
 
-            peripheralModeButton = (Button) templateView.findViewById(R.id.peripheralModeButton);
-            peripheralModeButton.setEnabled(bleManager.isBluetoothAdapterOn());
+            newCotDequeuer.setDeviceMode(deviceMode);
 
-            peripheralModeButton.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View view) {
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
+            currentPane = peripheralPane;
 
-                            deviceMode = DEVICE_MODE.PERIPHERAL_MODE;
+            bleManager.startPeripheralServer();
 
-                            newCotDequeuer.setDeviceMode(deviceMode);
+            // set up peripheral mode UI
 
-                            currentPane = peripheralPane;
+            peripheralView = PluginLayoutInflater.inflate(pluginContext,
+                    R.layout.peripheral_layout, null);
 
-                            bleManager.startPeripheralServer();
-
-                            showPane();
-
-                        }
-                    });
-
-                }
-            });
-
-            centralModeButton = (Button) templateView.findViewById(R.id.centralModeButton);
+            centralModeButton = (Button) peripheralView.findViewById(R.id.centralModeButton);
             centralModeButton.setEnabled(bleManager.isBluetoothAdapterOn());
 
             centralModeButton.setOnClickListener(new View.OnClickListener() {
@@ -292,21 +274,6 @@ public class PluginTemplate implements IPlugin,
                     });
                 }
             });
-
-            templatePane = new PaneBuilder(templateView)
-                    // relative location is set to default; pane will switch location dependent on
-                    // current orientation of device screen
-                    .setMetaValue(Pane.RELATIVE_LOCATION, Pane.Location.Default)
-                    // pane will take up 50% of screen width in landscape mode
-                    .setMetaValue(Pane.PREFERRED_WIDTH_RATIO, 0.5D)
-                    // pane will take up 50% of screen height in portrait mode
-                    .setMetaValue(Pane.PREFERRED_HEIGHT_RATIO, 0.5D)
-                    .build();
-
-            // set up peripheral mode UI
-
-            peripheralView = PluginLayoutInflater.inflate(pluginContext,
-                    R.layout.peripheral_layout, null);
 
             peripheralLoggerThread = new Thread(new PeripheralLogger());
             peripheralLoggerThread.start();
@@ -349,6 +316,7 @@ public class PluginTemplate implements IPlugin,
             connectionStatusTextView = peripheralView.findViewById(R.id.remoteConnectionStatus);
             connectionStatusTextView.setText(REMOTE_DEVICE_NOT_CONNECTED);
             connectionStatusTextView.setTextColor(Color.RED);
+
 
             peripheralPane = new PaneBuilder(peripheralView)
                     // relative location is set to default; pane will switch location dependent on
@@ -442,7 +410,9 @@ public class PluginTemplate implements IPlugin,
                 Log.e(TAG, "Failure to start http rest server", e);
             }
 
-            currentPane = templatePane;
+            currentPane = peripheralPane;
+
+            showPane();
 
         }
 
@@ -679,11 +649,15 @@ public class PluginTemplate implements IPlugin,
 
     @Override
     public void startedAdvertising() {
-        toggleAdvertisingButton.setText(R.string.toggle_advertising_off);
+        if (toggleAdvertisingButton != null) {
+            toggleAdvertisingButton.setText(R.string.toggle_advertising_off);
+        }
     }
 
     @Override
     public void stoppedAdvertising() {
-        toggleAdvertisingButton.setText(R.string.toggle_advertising_on);
+        if (toggleAdvertisingButton != null) {
+            toggleAdvertisingButton.setText(R.string.toggle_advertising_on);
+        }
     }
 }

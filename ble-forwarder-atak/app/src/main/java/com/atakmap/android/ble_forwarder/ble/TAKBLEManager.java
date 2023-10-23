@@ -48,7 +48,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.ParcelUuid;
 
-import com.atakmap.android.ble_forwarder.TimeProfile;
+import com.atakmap.android.ble_forwarder.TAKBLEDataTransferProfile;
 import com.atakmap.android.ble_forwarder.util.BLEUtil;
 import com.atakmap.android.ipc.AtakBroadcast;
 import com.atakmap.android.maps.MapView;
@@ -68,13 +68,10 @@ public class TAKBLEManager {
 
     public static final int DEFAULT_MTU_SIZE = 512;
 
-    // I've found that there are issues when sending the MTU between devices - if
-    // devices send less than the MTU there are no issues, so I have been making
-    // the central send messages with READ_VS_MTU_DISCREPANCY less than the MTU size
-    public static final int READ_VS_MTU_DISCREPANCY = 10;
+    public static final int BLE_HEADER_SIZE = 3;
 
     private int currentMtu = DEFAULT_MTU_SIZE;
-    private int currentReadSize = -1;
+    private int blePacketAppDataSize = -1;
 
     public interface TAKBLEManagerCallbacks {
 
@@ -200,8 +197,8 @@ public class TAKBLEManager {
                 Log.d(TAG, "Found device with address " + result.getDevice().getAddress());
                 List<UUID> serviceUUIDs = BLEUtil.getServiceUUIDsList(result);
                 Log.d(TAG, "Device had service uuids: " + serviceUUIDs);
-                if (serviceUUIDs.contains(TimeProfile.TIME_SERVICE)) {
-                    centralLogMessages.add("Found device with service uuid " + TimeProfile.TIME_SERVICE);
+                if (serviceUUIDs.contains(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)) {
+                    centralLogMessages.add("Found device with service uuid " + TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE);
                     mBluetoothScanner.stopScan(this);
 
                     if (mBluetoothGatt == null) {
@@ -313,7 +310,7 @@ public class TAKBLEManager {
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(true)
                 .setIncludeTxPowerLevel(false)
-                .addServiceUuid(new ParcelUuid(TimeProfile.TIME_SERVICE))
+                .addServiceUuid(new ParcelUuid(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE))
                 .build();
 
         isAdvertising = true;
@@ -351,7 +348,7 @@ public class TAKBLEManager {
             callbacks.peripheralUp();
         }
 
-        mBluetoothGattServer.addService(TimeProfile.createTimeService());
+        mBluetoothGattServer.addService(TAKBLEDataTransferProfile.createTAKBLEDataTransferService());
         peripheralLogMessages.add("Added service for data transfer.");
 
     }
@@ -403,16 +400,15 @@ public class TAKBLEManager {
             return;
         }
 
-        byte[] stringBytes = string.getBytes(StandardCharsets.UTF_8);
         peripheralLogMessages.add("Updating connected devices with new string:\n" + string);
         Log.d(TAG, "Updating connected devices with new string:\n" + string);
-        peripheralLogMessages.add("Length of new string: " + stringBytes.length);
+        peripheralLogMessages.add("Length of new string: " + string.length());
 
         //Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
         BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
-                .getService(TimeProfile.TIME_SERVICE)
-                .getCharacteristic(TimeProfile.CURRENT_TIME);
-        timeCharacteristic.setValue(stringBytes);
+                .getService(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)
+                .getCharacteristic(TAKBLEDataTransferProfile.PERIPHERAL_TO_CENTRAL_TRANSFER_CHARACTERISTIC);
+        timeCharacteristic.setValue(string);
 
         for (BluetoothDevice device : mRegisteredDevices) {
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
@@ -423,8 +419,8 @@ public class TAKBLEManager {
     private void sendDataToPeripheral(String string) {
 
         BluetoothGattCharacteristic localTimeCharacteristic =
-                mBluetoothGatt.getService(TimeProfile.TIME_SERVICE)
-                        .getCharacteristic(TimeProfile.LOCAL_TIME_INFO);
+                mBluetoothGatt.getService(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)
+                        .getCharacteristic(TAKBLEDataTransferProfile.CENTRAL_TO_PERIPHERAL_TRANSFER_CHARACTERISTIC);
 
         localTimeCharacteristic.setValue(string);
 
@@ -464,11 +460,11 @@ public class TAKBLEManager {
                                                 BluetoothGattCharacteristic characteristic) {
             long now = System.currentTimeMillis();
             Log.d(TAG, "Got characteristic read request for uuid: " + characteristic.getUuid());
-            if (TimeProfile.CURRENT_TIME.equals(characteristic.getUuid())) {
+            if (TAKBLEDataTransferProfile.PERIPHERAL_TO_CENTRAL_TRANSFER_CHARACTERISTIC.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read LocalTimeInfo");
                 BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
-                        .getService(TimeProfile.TIME_SERVICE)
-                        .getCharacteristic(TimeProfile.CURRENT_TIME);
+                        .getService(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)
+                        .getCharacteristic(TAKBLEDataTransferProfile.PERIPHERAL_TO_CENTRAL_TRANSFER_CHARACTERISTIC);
 
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
@@ -490,7 +486,7 @@ public class TAKBLEManager {
         @SuppressLint("MissingPermission")
         public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset,
                                             BluetoothGattDescriptor descriptor) {
-            if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
+            if (TAKBLEDataTransferProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
                 Log.d(TAG, "Config descriptor read");
                 byte[] returnValue;
                 if (mRegisteredDevices.contains(device)) {
@@ -519,7 +515,7 @@ public class TAKBLEManager {
                                              BluetoothGattDescriptor descriptor,
                                              boolean preparedWrite, boolean responseNeeded,
                                              int offset, byte[] value) {
-            if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
+            if (TAKBLEDataTransferProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
                 if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value)) {
                     Log.d(TAG, "Subscribe device to notifications: " + device);
                     mRegisteredDevices.add(device);
@@ -552,7 +548,7 @@ public class TAKBLEManager {
         public void onMtuChanged(BluetoothDevice device, int mtu) {
             Log.d(TAG, "Mtu changed!");
             callbacks.newMtuNegotiated(mtu);
-            currentReadSize = mtu - READ_VS_MTU_DISCREPANCY;
+            blePacketAppDataSize = mtu - BLE_HEADER_SIZE;
             mtuNegotiated = true;
         }
 
@@ -561,7 +557,7 @@ public class TAKBLEManager {
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
 
-            if (characteristic.getUuid().equals(TimeProfile.LOCAL_TIME_INFO)) {
+            if (characteristic.getUuid().equals(TAKBLEDataTransferProfile.CENTRAL_TO_PERIPHERAL_TRANSFER_CHARACTERISTIC)) {
 
                 Log.d(TAG, "Got write to local time profile.");
                 String readValue = new String(value, StandardCharsets.UTF_8);
@@ -647,8 +643,9 @@ public class TAKBLEManager {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 centralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
                 String readValue = characteristic.getStringValue(0);
-                if (readValue.length() > currentReadSize) {
-                    readValue = readValue.substring(0, currentReadSize);
+                Log.d(TAG, "read value from characteristic: " + readValue);
+                if (readValue.length() > blePacketAppDataSize) {
+                    readValue = readValue.substring(0, blePacketAppDataSize);
                 }
                 centralLogMessages.add("Got value: " + readValue);
                 Log.d(TAG, "Got value: " + readValue);
@@ -663,15 +660,15 @@ public class TAKBLEManager {
                 Log.d(TAG, "Successfully negotiated MTU of " + mtu);
                 centralLogMessages.add("Successfully negotiated MTU of " + mtu);
                 callbacks.newMtuNegotiated(mtu);
-                currentReadSize = mtu - 10;
+                blePacketAppDataSize = mtu - BLE_HEADER_SIZE;
 
                 mtuNegotiated = true;
 
                 for (BluetoothGattService service : mBluetoothGatt.getServices()) {
                     centralLogMessages.add("Got service with uuid " + service.getUuid());
-                    if (service.getUuid().equals(TimeProfile.TIME_SERVICE)) {
+                    if (service.getUuid().equals(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)) {
                         centralLogMessages.add("Found data transfer service, trying to read data...");
-                        BluetoothGattCharacteristic characteristic = service.getCharacteristic(TimeProfile.CURRENT_TIME);
+                        BluetoothGattCharacteristic characteristic = service.getCharacteristic(TAKBLEDataTransferProfile.PERIPHERAL_TO_CENTRAL_TRANSFER_CHARACTERISTIC);
                         if (characteristic != null) {
                             centralLogMessages.add("Found data transfer characteristic, trying to subscribe to notifications...");
                             characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
@@ -682,7 +679,7 @@ public class TAKBLEManager {
                             descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                             mBluetoothGatt.writeDescriptor(descriptor);
                         } else {
-                            centralLogMessages.add("Did not find data transfer characteristic...");
+                            centralLogMessages.add("Did not find peripheral to central data transfer characteristic...");
                         }
                     }
                 }
@@ -697,9 +694,9 @@ public class TAKBLEManager {
             super.onCharacteristicWrite(gatt, characteristic, status);
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "Successfully wrote to local time profile characteristic.");
+                Log.d(TAG, "Successfully wrote to central to peripheral data transfer characteristic.");
             } else {
-                Log.d(TAG, "Failed to write to local time profile characteristic.");
+                Log.d(TAG, "Failed to write to central to peripheral data transfer characteristic.");
             }
         }
     };

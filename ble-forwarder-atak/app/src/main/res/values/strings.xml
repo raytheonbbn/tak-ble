@@ -31,4 +31,6 @@
     <string name="toggle_advertising_on">Start Advertising</string>
     <string name="toggle_advertising_off">Stop Advertising</string>
     <string name="mtu_input_label">MTU:</string>
+    <string name="central_mode_button">Central Mode</string>
+    <string name="peripheral_mode_button">Peripheral Mode</string>
 </resources>
