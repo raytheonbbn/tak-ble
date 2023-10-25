@@ -42,7 +42,7 @@ public class NewCotDequeuer implements Runnable {
     Queue<String> peripheralLogMessages;
     Queue<String> centralLogMessages;
     NewCotDequeuedCallback callback;
-    Queue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
+    ArrayBlockingQueue<String> newCotQueue = new ArrayBlockingQueue<>(1000);
     PluginTemplate.DEVICE_MODE deviceMode = PluginTemplate.DEVICE_MODE.NONE_SELECTED;
 
     public NewCotDequeuer(NewCotDequeuedCallback callback,
@@ -63,10 +63,10 @@ public class NewCotDequeuer implements Runnable {
 
     @Override
     public void run() {
-        while (true) {
-            if (blePacketAppDataSize != -1) {
-                String newCot = newCotQueue.poll();
-                if (newCot != null) {
+        try {
+            while (true) {
+                if (blePacketAppDataSize != -1) {
+                    String newCot = newCotQueue.take();
                     if (newCot != null) {
                         if (deviceMode.equals(PluginTemplate.DEVICE_MODE.PERIPHERAL_MODE)) {
                             peripheralLogMessages.add("Got new cot from local ATAK");
@@ -114,15 +114,18 @@ public class NewCotDequeuer implements Runnable {
                             }
 
                         }
+
+                    }
+                } else {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Log.w(TAG, "Not trying to deqeue CoT's for sending until mtu negotiated...");
                     }
                 }
-            } else {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Log.w(TAG, "Not trying to deqeue CoT's for sending until mtu negotiated...");
-                }
             }
+        } catch (InterruptedException e) {
+            Log.w(TAG, "Error while running cot deqeueuer loop", e);
         }
     }
 

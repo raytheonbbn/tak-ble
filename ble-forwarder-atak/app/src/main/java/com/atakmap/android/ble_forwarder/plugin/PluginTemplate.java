@@ -133,8 +133,8 @@ public class PluginTemplate implements IPlugin,
     public static final String REMOTE_DEVICE_NOT_CONNECTED = "NOT CONNECTED";
     public static final String REMOTE_DEVICE_CONNECTING = "CONNECTING";
 
-    public static Queue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
-    public static Queue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
+    public static ArrayBlockingQueue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
+    public static ArrayBlockingQueue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
 
     public static String receivedCot = "";
 
@@ -589,9 +589,14 @@ public class PluginTemplate implements IPlugin,
         public void run() {
             Log.d(TAG, "Starting UI logger...");
             while (true) {
-                String msg = peripheralLogMessages.poll();
-                if (peripheralLogTextView != null && msg != null) {
-                    handler.post(() -> peripheralLogTextView.append(msg + "\n" + "---" + "\n"));
+                try {
+                    String msg = peripheralLogMessages.take();
+
+                    if (peripheralLogTextView != null && msg != null) {
+                        handler.post(() -> peripheralLogTextView.append(msg + "\n" + "---" + "\n"));
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
         }
@@ -604,9 +609,14 @@ public class PluginTemplate implements IPlugin,
         public void run() {
             Log.d(TAG, "Starting UI logger...");
             while (true) {
-                String msg = centralLogMessages.poll();
-                if (centralLogTextView != null && msg != null) {
-                    handler.post(() -> centralLogTextView.append(msg + "\n" + "---" + "\n"));
+                try {
+                    String msg = centralLogMessages.take();
+
+                    if (centralLogTextView != null && msg != null) {
+                        handler.post(() -> centralLogTextView.append(msg + "\n" + "---" + "\n"));
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
         }
