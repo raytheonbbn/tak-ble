@@ -62,7 +62,7 @@ public class CoTServerThread implements Runnable {
     private final static String TAK_PING_TYPE = "t-x-c-t";
     private final static int TIMEOUT_MILLIS = 60000;
 
-    public Queue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
+    public ArrayBlockingQueue<String> outgoingCotQueue = new ArrayBlockingQueue<>(1000);
     public Queue<String> centralLogMessages;
 
     NewCotCallback newCotCallback;
@@ -165,7 +165,7 @@ public class CoTServerThread implements Runnable {
                 if (!outgoingCotQueue.isEmpty()) {
                     OutputStream os = socket.getOutputStream();
                     while (!outgoingCotQueue.isEmpty()) {
-                        String outgoingCot = outgoingCotQueue.poll();
+                        String outgoingCot = outgoingCotQueue.take();
                         if (outgoingCot != null) {
                             os.write(outgoingCot.getBytes(StandardCharsets.UTF_8));
                             centralLogMessages.add("Wrote cot received over BLE to local ATAK.");

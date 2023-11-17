@@ -21,20 +21,54 @@
 
 package com.atakmap.android.ble_forwarder.util;
 
+import android.util.Log;
+import android.util.Pair;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
+
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+
 public class CotUtils {
+
+    public static final String TAG = CotUtils.class.getSimpleName();
 
     public static final String START_DELIMITER_STRING = "<?xml version=\"1.0\"";
     public static final byte[] DELIMITER = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
     public static final String DELIMITER_STRING = new String(DELIMITER, StandardCharsets.UTF_8);
-    public static final String SYNC_SEARCH_FAKE_COT_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>SYNC_SEARCH</event>";
-    public static final String SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"sync_search_response\">";
-    public static final String CONTENT_REQUEST_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"content_request\">";
-    public static final String CONTENT_RESPONSE_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"content_response\">";
+    public static final String CONTENT_NODE_NAME = "c";
+    public static final String CONTENT_BEGINNING_TAG = "<" + CONTENT_NODE_NAME + ">";
+    public static final String CONTENT_ENDING_TAG = "</" + CONTENT_NODE_NAME + ">";
+    public static final String DETAIL_BEGINNING_TAG = "<detail>";
+    public static final String DETAIL_ENDING_TAG = "</detail>";
+    public static final String DETAIL_AND_CONTENT_BEGINNING_TAGS = DETAIL_BEGINNING_TAG + CONTENT_BEGINNING_TAG;
+    public static final String DETAIL_AND_CONTENT_ENDING_TAGS = CONTENT_ENDING_TAG + DETAIL_ENDING_TAG;
+    public static final String SYNC_SEARCH_REQUEST_HOW = "sync_search_request";
+    public static final String SYNC_SEARCH_RESPONSE_HOW = "sync_search_response";
+    public static final String CONTENT_REQUEST_HOW = "content_request";
+    public static final String CONTENT_RESPONSE_HOW = "content_response";
+    public static final String SYNC_SEARCH_FAKE_COT_STRING =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                    "<event version=\"2.0\" how=\"" + SYNC_SEARCH_REQUEST_HOW + "\">" +
+                    "  " + DETAIL_AND_CONTENT_BEGINNING_TAGS +
+                    "      sync_search\n" +
+                    "    " + DETAIL_AND_CONTENT_ENDING_TAGS +
+                    "</event>";
+    public static final String SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"" + SYNC_SEARCH_RESPONSE_HOW + "\">";
+    public static final String CONTENT_REQUEST_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"" + CONTENT_REQUEST_HOW + "\">";
+    public static final String CONTENT_RESPONSE_START_DELIMITER_STRING = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><event version=\"2.0\" how=\"" + CONTENT_RESPONSE_HOW + "\">";
 
     public static byte[] readCoTMessage(InputStream in) throws Exception {
 
@@ -102,6 +136,55 @@ public class CotUtils {
             hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
         }
         return new String(hexChars);
+    }
+
+    public static Pair<String,String> getHowAndContent(String cotEvent) {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder builder = factory.newDocumentBuilder();
+
+            // Create a ByteArrayInputStream to read the XML string
+            ByteArrayInputStream input = new ByteArrayInputStream(cotEvent.getBytes("UTF-8"));
+
+            // Parse the XML string into a Document object
+            Document document = builder.parse(input);
+
+            // Get the <event> element
+            NodeList eventList = document.getElementsByTagName("event");
+
+            if (eventList.getLength() > 0) {
+                Node eventNode = eventList.item(0);
+
+                // Check if the <event> element has the "how" attribute
+                if (eventNode.getNodeType() == Node.ELEMENT_NODE) {
+                    Element eventElement = (Element) eventNode;
+                    String howAttributeValue = eventElement.getAttribute("how");
+
+                    // Get the text content of the <c> element
+                    NodeList cList = eventElement.getElementsByTagName("c");
+
+                    if (cList.getLength() > 0) {
+                        Node cNode = cList.item(0);
+                        String cContent = cNode.getTextContent();
+
+                        // Return a pair of values
+                        return new Pair<>(howAttributeValue, cContent);
+                    } else {
+                        Log.w(TAG, "No <c> element found within <event> element.");
+                        return null;
+                    }
+                } else {
+                    Log.w(TAG, "<event> element is not an ELEMENT_NODE.");
+                    return null;
+                }
+            } else {
+                Log.w(TAG, "No <event> element found in the XML.");
+                return null;
+            }
+        } catch (ParserConfigurationException | IOException | SAXException e) {
+            Log.e(TAG, "Getting contents of cot event failed", e);
+            return null;
+        }
     }
 
 }

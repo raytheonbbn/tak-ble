@@ -21,18 +21,27 @@
 
 package com.atakmap.android.ble_forwarder.takserver_facade;
 
+import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
+
 import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
 import com.atakmap.android.ble_forwarder.plugin.PluginTemplate;
+import com.atakmap.android.ble_forwarder.proto.ProtoBufUtils;
+import com.atakmap.android.ble_forwarder.proto.generated.Cotevent;
 import com.atakmap.coremap.log.Log;
+import com.google.protobuf.InvalidProtocolBufferException;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 
 public class NewCotDequeuer implements Runnable {
 
     public interface NewCotDequeuedCallback {
-        void newCotSubstringDequeuedForCentrals(String newCotSubstring);
-        void newCotDequeuedForPeripheral(String newCot);
+        void newCotSubstringDequeuedForCentrals(byte[] data);
+
+        void newCotDequeuedForPeripheral(byte[] data);
     }
 
     private int blePacketAppDataSize = -1;
@@ -68,14 +77,45 @@ public class NewCotDequeuer implements Runnable {
                 if (blePacketAppDataSize != -1) {
                     String newCot = newCotQueue.take();
                     if (newCot != null) {
+                        Cotevent.CotEvent cotEvent = ProtoBufUtils.cot2protoBuf(newCot);
+                        if (cotEvent == null) {
+                            Log.w(TAG, "Failed to convert cot from xml to proto class");
+                            continue;
+                        }
+
+                        byte[] cotEventByteArrayNoDelimiters = cotEvent.toByteArray();
+
+                        if (cotEventByteArrayNoDelimiters == null) {
+                            Log.d(TAG, "cot event byte array was null");
+                            peripheralLogMessages.add("cot event byte array was null.");
+                            continue;
+                        }
+
+                        // Convert string constants to byte arrays
+                        byte[] startDelimiterBytes = START_DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
+                        byte[] delimiterBytes = DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
+
+                        // Create a new byte array containing the concatenated data
+                        byte[] cotEventByteArray = new byte[startDelimiterBytes.length +
+                                cotEventByteArrayNoDelimiters.length +
+                                delimiterBytes.length];
+
+                        // Copy data into the new array
+                        System.arraycopy(startDelimiterBytes, 0, cotEventByteArray, 0, startDelimiterBytes.length);
+                        System.arraycopy(cotEventByteArrayNoDelimiters, 0, cotEventByteArray, startDelimiterBytes.length, cotEventByteArrayNoDelimiters.length);
+                        System.arraycopy(delimiterBytes, 0, cotEventByteArray, startDelimiterBytes.length + cotEventByteArrayNoDelimiters.length, delimiterBytes.length);
+
+                        Log.d(TAG, "Length of cot event byte array: " + cotEventByteArray.length);
+                        Log.d(TAG, "Length of cot event string: " + newCot.length());
+
                         if (deviceMode.equals(PluginTemplate.DEVICE_MODE.PERIPHERAL_MODE)) {
                             peripheralLogMessages.add("Got new cot from local ATAK");
                             Log.d(TAG, "dequeuing new cot: " + newCot);
-                            for (int i = 0; i < newCot.length(); i += blePacketAppDataSize) {
+                            for (int i = 0; i < cotEventByteArray.length; i += blePacketAppDataSize) {
                                 try {
                                     Thread.sleep(500);
                                 } catch (InterruptedException e) {
-                                    // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                                    // ignore this - if we are getting data that is not the startDelimiterString and receivedCotString is empty,
                                     // then that means we are getting data in the middle of a CoT that we didn't get the start of -
                                     // just ignore all this data
                                     centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
@@ -83,21 +123,21 @@ public class NewCotDequeuer implements Runnable {
                                     Log.e(TAG, "interrupted", e);
                                 }
                                 int lastIndex = i + blePacketAppDataSize;
-                                if (lastIndex > newCot.length()) {
-                                    lastIndex = newCot.length();
+                                if (lastIndex > cotEventByteArray.length) {
+                                    lastIndex = cotEventByteArray.length;
                                 }
-                                String cotSubstring = newCot.substring(i, lastIndex);
-                                Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
-                                callback.newCotSubstringDequeuedForCentrals(cotSubstring);
+                                byte[] subArray = Arrays.copyOfRange(cotEventByteArray, i, lastIndex);
+                                Log.d(TAG, "Dequeueing new cot subarray from index " + i + " to " + lastIndex);
+                                callback.newCotSubstringDequeuedForCentrals(subArray);
                             }
                         } else if (deviceMode.equals(PluginTemplate.DEVICE_MODE.CENTRAL_MODE)) {
                             peripheralLogMessages.add("Got new cot from local ATAK");
                             Log.d(TAG, "dequeuing new cot: " + newCot);
-                            for (int i = 0; i < newCot.length(); i += blePacketAppDataSize) {
+                            for (int i = 0; i < cotEventByteArray.length; i += blePacketAppDataSize) {
                                 try {
                                     Thread.sleep(750);
                                 } catch (InterruptedException e) {
-                                    // ignore this - if we are getting data that is not the startDelimiterString and receivedCot is empty,
+                                    // ignore this - if we are getting data that is not the startDelimiterString and receivedCotString is empty,
                                     // then that means we are getting data in the middle of a CoT that we didn't get the start of -
                                     // just ignore all this data
                                     centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
@@ -105,12 +145,12 @@ public class NewCotDequeuer implements Runnable {
                                     Log.e(TAG, "interrupted", e);
                                 }
                                 int lastIndex = i + blePacketAppDataSize;
-                                if (lastIndex > newCot.length()) {
-                                    lastIndex = newCot.length();
+                                if (lastIndex > cotEventByteArray.length) {
+                                    lastIndex = cotEventByteArray.length;
                                 }
-                                String cotSubstring = newCot.substring(i, lastIndex);
-                                Log.d(TAG, "Dequeueing new cot substring: " + cotSubstring);
-                                callback.newCotDequeuedForPeripheral(cotSubstring);
+                                byte[] subArray = Arrays.copyOfRange(cotEventByteArray, i, lastIndex);
+                                Log.d(TAG, "Dequeueing new cot subarray from index " + i + " to " + lastIndex);
+                                callback.newCotDequeuedForPeripheral(subArray);
                             }
 
                         }
@@ -125,7 +165,7 @@ public class NewCotDequeuer implements Runnable {
                 }
             }
         } catch (InterruptedException e) {
-            Log.w(TAG, "Error while running cot deqeueuer loop", e);
+            Log.w(TAG, "Error in new cot dequeuer loop", e);
         }
     }
 

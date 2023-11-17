@@ -22,9 +22,20 @@
 
 package com.atakmap.android.ble_forwarder.plugin;
 
+import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_BEGINNING_TAG;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_ENDING_TAG;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_REQUEST_HOW;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_RESPONSE_HOW;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_RESPONSE_START_DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_AND_CONTENT_BEGINNING_TAGS;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_AND_CONTENT_ENDING_TAGS;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_BEGINNING_TAG;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_ENDING_TAG;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_FAKE_COT_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_REQUEST_HOW;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_RESPONSE_HOW;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING;
 
 import android.content.Context;
@@ -34,6 +45,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.text.InputType;
+import android.util.Pair;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -44,6 +56,8 @@ import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.atakutils.MiscUtils;
 import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
+import com.atakmap.android.ble_forwarder.proto.ProtoBufUtils;
+import com.atakmap.android.ble_forwarder.proto.generated.Cotevent;
 import com.atakmap.android.ble_forwarder.takserver_facade.CoTServerThread;
 import com.atakmap.android.ble_forwarder.takserver_facade.MyRestServer;
 import com.atakmap.android.ble_forwarder.takserver_facade.NewCotDequeuer;
@@ -55,10 +69,13 @@ import com.atakmap.android.ble_forwarder.util.Utils;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.log.Log;
 import com.google.gson.Gson;
+import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Queue;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 
 import gov.tak.api.plugin.IPlugin;
@@ -136,7 +153,8 @@ public class PluginTemplate implements IPlugin,
     public static ArrayBlockingQueue<String> centralLogMessages = new ArrayBlockingQueue<>(1000);
     public static ArrayBlockingQueue<String> peripheralLogMessages = new ArrayBlockingQueue<>(1000);
 
-    public static String receivedCot = "";
+    public static String receivedCotString = "";
+    public static byte[] receivedCot = null;
 
     private static SyncSearchCallback currentSyncSearchCallback = null;
     private static SyncContentCallback currentSyncContentCallback = null;
@@ -429,13 +447,13 @@ public class PluginTemplate implements IPlugin,
     }
 
     @Override
-    public void newCotSubstringDequeuedForCentrals(String newCotSubstring) {
-        bleManager.sendDataToConnectedCentrals(newCotSubstring);
+    public void newCotSubstringDequeuedForCentrals(byte[] data) {
+        bleManager.sendDataToConnectedCentrals(data);
     }
 
     @Override
-    public void newCotDequeuedForPeripheral(String newCot) {
-        bleManager.sendDataToConnectedPeripheral(newCot);
+    public void newCotDequeuedForPeripheral(byte[] data) {
+        bleManager.sendDataToConnectedPeripheral(data);
     }
 
     @Override
@@ -492,36 +510,75 @@ public class PluginTemplate implements IPlugin,
     }
 
     @Override
-    public void receivedStringOverBLE(String receivedValue) {
+    public void receivedBytesOverBLE(byte[] receivedValue) {
 
-        if (receivedValue.startsWith(START_DELIMITER_STRING)) {
+        String receivedValueString = new String(receivedValue);
+
+        if (receivedValueString.startsWith(START_DELIMITER_STRING)) {
 
             if (deviceMode.equals(DEVICE_MODE.CENTRAL_MODE)) {
                 centralLogMessages.add("Got start of CoT.");
             } else if (deviceMode.equals(DEVICE_MODE.PERIPHERAL_MODE)) {
                 peripheralLogMessages.add("Got start of CoT.");
             }
-            //receivedCot = START_DELIMITER_STRING;// + " ";
-            receivedCot = receivedValue;
+            receivedCotString = receivedValueString;
 
-            if (receivedCot.startsWith(START_DELIMITER_STRING) && receivedCot.endsWith(DELIMITER_STRING)) {
-                processReceivedCoT(receivedCot);
-                receivedCot = "";
+            // Convert START_DELIMITER_STRING to a byte array
+            byte[] startDelimiterBytes = START_DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
+
+            // Assuming START_DELIMITER_STRING has a known length
+            int startDelimiterLength = startDelimiterBytes.length;
+
+            byte[] receivedValueNoStartDelimiter = new byte[receivedValue.length - startDelimiterLength];
+            System.arraycopy(receivedValue, startDelimiterLength, receivedValueNoStartDelimiter, 0, receivedValueNoStartDelimiter.length);
+
+            receivedCot = receivedValueNoStartDelimiter;
+
+            if (receivedCotString.startsWith(START_DELIMITER_STRING) && receivedCotString.endsWith(DELIMITER_STRING)) {
+                handleFullyReceivedCoT();
             }
 
         } else {
-            if (!receivedCot.equals("")) {
-                receivedCot += receivedValue;
+            if (!receivedCotString.equals("")) {
+                receivedCotString += receivedValueString;
+                byte[] combinedArray = Arrays.copyOf(receivedCot, receivedCot.length + receivedValue.length);
+                System.arraycopy(receivedValue, 0, combinedArray, receivedCot.length, receivedValue.length);
+                receivedCot = combinedArray;
 
-                Log.d(TAG, "ReceivedCot so far: " + receivedCot);
+                Log.d(TAG, "ReceivedCot so far: " + receivedCotString);
 
-                if (receivedCot.startsWith(START_DELIMITER_STRING) && receivedCot.endsWith(DELIMITER_STRING)) {
-                    processReceivedCoT(receivedCot);
-                    receivedCot = "";
+                if (receivedCotString.startsWith(START_DELIMITER_STRING) && receivedCotString.endsWith(DELIMITER_STRING)) {
+                    handleFullyReceivedCoT();
                 }
             }
         }
 
+    }
+
+    private void handleFullyReceivedCoT() {
+        // strip off the end delimiter from the receivedCot byte array
+
+        // Convert DELIMITER_STRING to a byte array
+        byte[] delimiterBytes = DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
+
+        // Assuming DELIMITER_STRING has a known length
+        int delimiterLength = delimiterBytes.length;
+
+        byte[] strippedReceivedCot = new byte[receivedCot.length - delimiterLength];
+        System.arraycopy(receivedCot, 0, strippedReceivedCot, 0, strippedReceivedCot.length);
+
+        try {
+            Cotevent.CotEvent receivedCotEventProtoBuf = Cotevent.CotEvent.parseFrom(strippedReceivedCot);
+
+            String cotEvent = ProtoBufUtils.proto2cot(receivedCotEventProtoBuf);
+
+            processReceivedCoT(cotEvent);
+
+        } catch (InvalidProtocolBufferException e) {
+            Log.e(TAG, "Invalid protocol buffer exception", e);
+        }
+        receivedCotString = "";
+        receivedCot = null;
     }
 
     private void processReceivedCoT(String cot) {
@@ -531,52 +588,59 @@ public class PluginTemplate implements IPlugin,
             peripheralLogMessages.add("Received full cot: " + cot);
         }
         Log.d(TAG, "Received full cot: " + cot);
-        if (cot.equals(CotUtils.SYNC_SEARCH_FAKE_COT_STRING)) {
-            Log.d(TAG, "Got fake cot that signals a sync search from other device - generating JSON response from files that I am currently aware of...");
-            String currentFilesJsonString = FileManager.getInstance().getJsonStringForCurrentFiles();
-            Log.d(TAG, "Current files json string: " + currentFilesJsonString);
-            String syncSearchResponseCot = SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING + currentFilesJsonString + DELIMITER_STRING;
-            newCotDequeuer.addNewCotToQueue(syncSearchResponseCot);
-        } else if (cot.startsWith(SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING)) {
-            if (currentSyncSearchCallback != null) {
-                String json = cot.substring(SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING.length());
-                json = json.substring(0, json.length() - DELIMITER_STRING.length());
-                currentSyncSearchCallback.result(json);
-                currentSyncSearchCallback = null;
-            } else {
-                Log.w(TAG, "Got sync search response string, but sync request callback was null.");
-            }
-        } else if (cot.startsWith(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING)) {
-            String hash = cot.substring(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING.length());
-            hash = hash.substring(0, hash.length() - DELIMITER_STRING.length());
-            Log.d(TAG, "Got content request with hash: " + hash);
-            File file = FileManager.getInstance().getFileData(hash);
-            FilesInformation.FileInfo fileInfo = FileManager.getInstance().getFileInfo(hash);
-            try {
-                byte[] fileBytes = Utils.convertFileToByteArray(file);
-                String fileBytesString = Utils.byteArrayToHexString(fileBytes);
-                fileBytesString = fileBytesString.substring(fileBytesString.indexOf("504B0304"));
-                fileBytesString = fileBytesString.substring(0, fileBytesString.length() - "0D0A2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D363337396464633735616261323031632D2D0D0A".length());
-                FileNameAndBytes fileNameAndBytes = new FileNameAndBytes();
-                fileNameAndBytes.setFileName(fileInfo.getName());
-                byte[] fileBytesStripped = Utils.hexStringToByteArray(fileBytesString);
-                String fileBytesStringBase64 = Utils.encodeToBase64(fileBytesStripped);
-                fileNameAndBytes.setFileBytesString(fileBytesStringBase64);
-                String fileNameAndBytesString = gson.toJson(fileNameAndBytes);
-                newCotDequeuer.addNewCotToQueue(CONTENT_RESPONSE_START_DELIMITER_STRING + fileNameAndBytesString + DELIMITER_STRING);
-            } catch (IOException e) {
-                e.printStackTrace();
-                Log.w(TAG, "Failed to read contents of file: " + e.getMessage(), e);
-            }
 
-        } else if (cot.startsWith(CONTENT_RESPONSE_START_DELIMITER_STRING)) {
-            if (currentSyncContentCallback != null) {
-                String fileNameAndBytesString = cot.substring(CONTENT_RESPONSE_START_DELIMITER_STRING.length());
-                fileNameAndBytesString = fileNameAndBytesString.substring(0, fileNameAndBytesString.length() - DELIMITER_STRING.length());
-                Log.d(TAG, "Got file bytes string: " + fileNameAndBytesString);
-                FileNameAndBytes fileNameAndBytes = gson.fromJson(fileNameAndBytesString, FileNameAndBytes.class);
-                currentSyncContentCallback.result(fileNameAndBytes);
-                currentSyncContentCallback = null;
+        Pair<String, String> howAndContent = CotUtils.getHowAndContent(cot);
+        if (howAndContent != null) {
+
+            Log.d(TAG, "Got how and content from cot: " + howAndContent);
+
+            if (howAndContent.first.equals(SYNC_SEARCH_REQUEST_HOW)) {
+                Log.d(TAG, "Got fake cot that signals a sync search from other device - generating JSON response from files that I am currently aware of...");
+                String currentFilesJsonString = FileManager.getInstance().getJsonStringForCurrentFiles();
+                Log.d(TAG, "Current files json string: " + currentFilesJsonString);
+                String syncSearchResponseCot = SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS +
+                        currentFilesJsonString + DETAIL_AND_CONTENT_ENDING_TAGS + DELIMITER_STRING;
+                newCotDequeuer.addNewCotToQueue(syncSearchResponseCot);
+            } else if (howAndContent.first.equals(SYNC_SEARCH_RESPONSE_HOW)) {
+                if (currentSyncSearchCallback != null) {
+                    String fileListJson = howAndContent.second;
+                    currentSyncSearchCallback.result(fileListJson);
+                    currentSyncSearchCallback = null;
+                } else {
+                    Log.w(TAG, "Got sync search response string, but sync request callback was null.");
+                }
+            } else if (howAndContent.first.equals(CONTENT_REQUEST_HOW)) {
+                String hash = howAndContent.second;
+                Log.d(TAG, "Got content request with hash: " + hash);
+                File file = FileManager.getInstance().getFileData(hash);
+                FilesInformation.FileInfo fileInfo = FileManager.getInstance().getFileInfo(hash);
+                try {
+                    byte[] fileBytes = Utils.convertFileToByteArray(file);
+                    String fileBytesString = Utils.byteArrayToHexString(fileBytes);
+                    fileBytesString = fileBytesString.substring(fileBytesString.indexOf("504B0304"));
+                    fileBytesString = fileBytesString.substring(0, fileBytesString.length() - "0D0A2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D2D363337396464633735616261323031632D2D0D0A".length());
+                    FileNameAndBytes fileNameAndBytes = new FileNameAndBytes();
+                    fileNameAndBytes.setFileName(fileInfo.getName());
+                    byte[] fileBytesStripped = Utils.hexStringToByteArray(fileBytesString);
+                    String fileBytesStringBase64 = Utils.encodeToBase64(fileBytesStripped);
+                    fileNameAndBytes.setFileBytesString(fileBytesStringBase64);
+                    String fileNameAndBytesString = gson.toJson(fileNameAndBytes);
+                    newCotDequeuer.addNewCotToQueue(CONTENT_RESPONSE_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS + fileNameAndBytesString + DETAIL_AND_CONTENT_ENDING_TAGS + DELIMITER_STRING);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    Log.w(TAG, "Failed to read contents of file: " + e.getMessage(), e);
+                }
+
+            } else if (howAndContent.first.equals(CONTENT_RESPONSE_HOW)) {
+                if (currentSyncContentCallback != null) {
+                    String fileNameAndBytesString = howAndContent.second;
+                    Log.d(TAG, "Got file bytes string: " + fileNameAndBytesString);
+                    FileNameAndBytes fileNameAndBytes = gson.fromJson(fileNameAndBytesString, FileNameAndBytes.class);
+                    currentSyncContentCallback.result(fileNameAndBytes);
+                    currentSyncContentCallback = null;
+                }
+            } else {
+                Log.w(TAG, "Got unexpected how: " + howAndContent.first);
             }
         } else {
             cotServer.addNewOutgoingCot(cot);
@@ -625,13 +689,13 @@ public class PluginTemplate implements IPlugin,
 
     public static void sendSyncSearchRequest(SyncSearchCallback callback) {
         Log.d(TAG, "Sending cot for sync search request over BLE to other device...");
-        newCotDequeuer.addNewCotToQueue(CotUtils.SYNC_SEARCH_FAKE_COT_STRING);
+        newCotDequeuer.addNewCotToQueue(SYNC_SEARCH_FAKE_COT_STRING);
         currentSyncSearchCallback = callback;
     }
 
     public static void sendSyncContentRequest(String hash, SyncContentCallback callback) {
         Log.d(TAG, "Sending cot for sync content request over BLE to other device...");
-        newCotDequeuer.addNewCotToQueue(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING + hash + DELIMITER_STRING);
+        newCotDequeuer.addNewCotToQueue(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS + hash + DETAIL_AND_CONTENT_ENDING_TAGS + DELIMITER_STRING);
         currentSyncContentCallback = callback;
     }
 
@@ -670,4 +734,5 @@ public class PluginTemplate implements IPlugin,
             toggleAdvertisingButton.setText(R.string.toggle_advertising_on);
         }
     }
+
 }

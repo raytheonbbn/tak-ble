@@ -92,7 +92,7 @@ public class TAKBLEManager {
 
         void scanFinished();
 
-        void receivedStringOverBLE(String receivedValue);
+        void receivedBytesOverBLE(byte[] data);
 
         void newMtuNegotiated(int newMtu);
 
@@ -171,17 +171,17 @@ public class TAKBLEManager {
         bleScannerThread.start();
     }
 
-    public void sendDataToConnectedPeripheral(String s) {
+    public void sendDataToConnectedPeripheral(byte[] data) {
         if (mtuNegotiated) {
-            sendDataToPeripheral(s);
+            sendDataToPeripheral(data);
         } else {
             Log.w(TAG, "Not sending data to peripheral, mtu not negotiated yet!");
         }
     }
 
-    public void sendDataToConnectedCentrals(String s) {
+    public void sendDataToConnectedCentrals(byte[] data) {
         if (mtuNegotiated) {
-            notifyRegisteredDevices(s);
+            notifyRegisteredDevices(data);
         } else {
             Log.w(TAG, "Not notifying registered devices of new data, mtu not negotiated yet!");
         }
@@ -301,7 +301,7 @@ public class TAKBLEManager {
         }
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
                 .setConnectable(true)
                 .setTimeout(0)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
@@ -394,21 +394,21 @@ public class TAKBLEManager {
      * to the characteristic.
      */
     @SuppressLint("MissingPermission")
-    private void notifyRegisteredDevices(String string) {
+    private void notifyRegisteredDevices(byte[] data) {
         if (mRegisteredDevices.isEmpty()) {
             Log.i(TAG, "No subscribers registered");
             return;
         }
 
-        peripheralLogMessages.add("Updating connected devices with new string:\n" + string);
-        Log.d(TAG, "Updating connected devices with new string:\n" + string);
-        peripheralLogMessages.add("Length of new string: " + string.length());
+        peripheralLogMessages.add("Updating connected devices with new byte array");
+        Log.d(TAG, "Updating connected devices with new byte array");
+        peripheralLogMessages.add("Length of new string: " + data.length);
 
         //Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
         BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
                 .getService(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)
                 .getCharacteristic(TAKBLEDataTransferProfile.PERIPHERAL_TO_CENTRAL_TRANSFER_CHARACTERISTIC);
-        timeCharacteristic.setValue(string);
+        timeCharacteristic.setValue(data);
 
         for (BluetoothDevice device : mRegisteredDevices) {
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
@@ -416,13 +416,13 @@ public class TAKBLEManager {
     }
 
     @SuppressLint("MissingPermission")
-    private void sendDataToPeripheral(String string) {
+    private void sendDataToPeripheral(byte[] data) {
 
         BluetoothGattCharacteristic localTimeCharacteristic =
                 mBluetoothGatt.getService(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)
                         .getCharacteristic(TAKBLEDataTransferProfile.CENTRAL_TO_PERIPHERAL_TRANSFER_CHARACTERISTIC);
 
-        localTimeCharacteristic.setValue(string);
+        localTimeCharacteristic.setValue(data);
 
         mBluetoothGatt.writeCharacteristic(localTimeCharacteristic);
 
@@ -559,11 +559,11 @@ public class TAKBLEManager {
 
             if (characteristic.getUuid().equals(TAKBLEDataTransferProfile.CENTRAL_TO_PERIPHERAL_TRANSFER_CHARACTERISTIC)) {
 
-                Log.d(TAG, "Got write to local time profile.");
+                Log.d(TAG, "Got write to central to peripheral transfer characteristic.");
                 String readValue = new String(value, StandardCharsets.UTF_8);
                 Log.d(TAG, "Value received: " + readValue);
 
-                callbacks.receivedStringOverBLE(readValue);
+                callbacks.receivedBytesOverBLE(value);
 
             }
 
@@ -642,14 +642,17 @@ public class TAKBLEManager {
             centralLogMessages.add("onCharacteristicRead with status " + status);
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 centralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
-                String readValue = characteristic.getStringValue(0);
+                byte[] readValue = characteristic.getValue();
                 Log.d(TAG, "read value from characteristic: " + readValue);
-                if (readValue.length() > blePacketAppDataSize) {
-                    readValue = readValue.substring(0, blePacketAppDataSize);
+                byte[] truncatedValue = null;
+                if (readValue.length > blePacketAppDataSize) {
+                    truncatedValue = Arrays.copyOfRange(readValue, 0, blePacketAppDataSize);
+                } else {
+                    truncatedValue = readValue;
                 }
-                centralLogMessages.add("Got value: " + readValue);
-                Log.d(TAG, "Got value: " + readValue);
-                callbacks.receivedStringOverBLE(readValue);
+                centralLogMessages.add("Got value: " + truncatedValue);
+                Log.d(TAG, "Got value: " + truncatedValue);
+                callbacks.receivedBytesOverBLE(truncatedValue);
             }
         }
 
