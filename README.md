@@ -1,6 +1,6 @@
 # TAK BLE
 
-This is a plugin developed to allow for communication of CoT's and files over Bluetooth Low Energy in ATAK.
+This is a plugin developed to allow for communication of CoT and files over Bluetooth Low Energy in ATAK.
 
 In order to use the plugin, the TAK Server connection must be properly set up first.
 
@@ -18,7 +18,7 @@ If the scan successfully finds another device and establishes a connection, you 
 
 ## Exchanging CoT Information over BLE
 
-Once the connection is established both ways, you can exchange CoT's over BLE using the chat functionality of ATAK (opening the Contacts page and sending a message to "All Chat Rooms" or directly to the other phone's contact, which should show in the Contacts section since CoT's containing track information should be being exchanged over BLE automatically).
+Once the connection is established both ways, you can exchange CoT over BLE using the chat functionality of ATAK (opening the Contacts page and sending a message to "All Chat Rooms" or directly to the other phone's contact, which should show in the Contacts section since CoT containing track information should be being exchanged over BLE automatically).
 
 You can also try exchanging CoT information by dropping a point, and then sending that point to the other device's contact, again using functionality built into ATAK.
 
