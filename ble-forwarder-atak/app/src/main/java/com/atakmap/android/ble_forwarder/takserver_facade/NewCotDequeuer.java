@@ -77,6 +77,9 @@ public class NewCotDequeuer implements Runnable {
                 if (blePacketAppDataSize != -1) {
                     String newCot = newCotQueue.take();
                     if (newCot != null) {
+
+                        Log.d(TAG, "got newCot: " + newCot);
+
                         Cotevent.CotEvent cotEvent = ProtoBufUtils.cot2protoBuf(newCot);
                         if (cotEvent == null) {
                             Log.w(TAG, "Failed to convert cot from xml to proto class");
@@ -84,6 +87,19 @@ public class NewCotDequeuer implements Runnable {
                         }
 
                         byte[] cotEventByteArrayNoDelimiters = cotEvent.toByteArray();
+
+//                        try {
+//                            Cotevent.CotEvent receivedCotEventProtoBuf = Cotevent.CotEvent.parseFrom(cotEventByteArrayNoDelimiters);
+//
+//                            String cotEventReparsed = ProtoBufUtils.proto2cot(receivedCotEventProtoBuf);
+//
+//                            Log.d(TAG, "Got cot event reparsed: " + cotEventReparsed);
+//
+//
+//                        } catch (InvalidProtocolBufferException e) {
+//                            Log.w(TAG, "Failed to parse protobuf", e);
+//                            continue;
+//                        }
 
                         if (cotEventByteArrayNoDelimiters == null) {
                             Log.d(TAG, "cot event byte array was null");

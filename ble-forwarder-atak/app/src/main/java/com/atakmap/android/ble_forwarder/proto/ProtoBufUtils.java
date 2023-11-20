@@ -34,13 +34,11 @@ import com.atakmap.android.ble_forwarder.proto.generated.TakvOuterClass;
 import com.atakmap.android.ble_forwarder.proto.generated.TrackOuterClass;
 import com.atakmap.android.ble_forwarder.util.DateUtil;
 
-import org.dom4j.Attribute;
-import org.dom4j.Document;
-import org.dom4j.Element;
-import org.dom4j.io.OutputFormat;
-import org.dom4j.io.SAXReader;
-import org.dom4j.DocumentHelper;
-import org.dom4j.io.XMLWriter;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import java.io.ByteArrayInputStream;
 import java.io.StringReader;
@@ -49,6 +47,11 @@ import java.util.Date;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 
 public class ProtoBufUtils {
 
@@ -63,166 +66,162 @@ public class ProtoBufUtils {
 
     public static Cotevent.CotEvent cot2protoBuf(String cotString) {
         try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            Document document = builder.parse(new ByteArrayInputStream(cotString.getBytes()));
 
-            // Create a SAXReader
-            SAXReader reader = new SAXReader();
-            Document document = reader.read(new StringReader(cotString));
-
-            // Get the root element
-            Element root = document.getRootElement();
-
-            if (root == null) {
-                Log.e(TAG, "cot2protoBuf failed to get root element");
-                return null;
-            }
+            Element root = document.getDocumentElement();
 
             //
             // event
             //
             Cotevent.CotEvent.Builder cotEventBuilder = Cotevent.CotEvent.newBuilder();
-            Attribute type = root.attribute("type");
-            if (type == null) {
-                Log.e(TAG, "cot2protoBuf failed to find CotEvent.type!");
+            String type = root.getAttribute("type");
+            if (type == null || type.isEmpty()) {
+                Log.w(TAG, "cot2protoBuf failed to find CotEvent.type!");
             } else {
-                cotEventBuilder.setType(type.getText());
+                cotEventBuilder.setType(type);
             }
 
-            Attribute uid = root.attribute("uid");
-            if (uid == null) {
-                Log.e(TAG, "cot2protoBuf failed to find CotEvent.uid!");
+            String uid = root.getAttribute("uid");
+            if (uid == null || uid.isEmpty()) {
+                Log.w(TAG, "cot2protoBuf failed to find CotEvent.uid!");
             } else {
-                cotEventBuilder.setUid(uid.getText());
+                cotEventBuilder.setUid(uid);
             }
 
-            Attribute how = root.attribute("how");
-            if (how == null) {
-                Log.e(TAG, "cot2protoBuf failed to find CotEvent.how!");
+            String how = root.getAttribute("how");
+            if (how == null || how.isEmpty()) {
+                Log.w(TAG, "cot2protoBuf failed to find CotEvent.how!");
             } else {
-                cotEventBuilder.setHow(how.getText());
+                cotEventBuilder.setHow(how);
             }
 
-            Attribute time = root.attribute("time");
-            if (time == null) {
-                Log.e(TAG, "cot2protoBuf failed to find CotEvent.time!");
+            String time = root.getAttribute("time");
+            if (time == null || time.isEmpty()) {
+                Log.w(TAG, "cot2protoBuf failed to find CotEvent.time!");
             } else {
-                cotEventBuilder.setSendTime(DateUtil.millisFromCotTimeStr(time.getText()));
+                cotEventBuilder.setSendTime(DateUtil.millisFromCotTimeStr(time));
             }
 
-            Attribute start = root.attribute("start");
-            if (start == null) {
-                Log.e(TAG, "cot2protoBuf failed to find CotEvent.start!");
+            String start = root.getAttribute("start");
+            if (start == null || start.isEmpty()) {
+                Log.w(TAG, "cot2protoBuf failed to find CotEvent.start!");
             } else {
-                cotEventBuilder.setStartTime(DateUtil.millisFromCotTimeStr(start.getText()));
+                cotEventBuilder.setStartTime(DateUtil.millisFromCotTimeStr(start));
             }
 
-            Attribute stale = root.attribute("stale");
-            if (stale == null) {
-                Log.e(TAG, "cot2protoBuf failed to find CotEvent.stale!");
+            String stale = root.getAttribute("stale");
+            if (stale == null || stale.isEmpty()) {
+                Log.w(TAG, "cot2protoBuf failed to find CotEvent.stale!");
             } else {
-                cotEventBuilder.setStaleTime(DateUtil.millisFromCotTimeStr(stale.getText()));
+                cotEventBuilder.setStaleTime(DateUtil.millisFromCotTimeStr(stale));
             }
 
-            Attribute caveat = root.attribute("caveat");
-            if (caveat != null) {
-                cotEventBuilder.setCaveat(caveat.getText());
+            String caveat = root.getAttribute("caveat");
+            if (caveat != null && !caveat.isEmpty()) {
+                cotEventBuilder.setCaveat(caveat);
             }
 
-            Attribute releaseableTo = root.attribute("releaseableTo");
-            if (releaseableTo != null) {
-                cotEventBuilder.setReleaseableTo(releaseableTo.getText());
+            String releaseableTo = root.getAttribute("releaseableTo");
+            if (releaseableTo != null && !releaseableTo.isEmpty()) {
+                cotEventBuilder.setReleaseableTo(releaseableTo);
             }
 
-            Attribute opex = root.attribute("opex");
-            if (opex != null) {
-                cotEventBuilder.setOpex(opex.getText());
+            String opex = root.getAttribute("opex");
+            if (opex != null && !opex.isEmpty()) {
+                cotEventBuilder.setOpex(opex);
             }
 
-            Attribute qos = root.attribute("qos");
-            if (qos != null) {
-                cotEventBuilder.setQos(qos.getText());
+            String qos = root.getAttribute("qos");
+            if (qos != null && !qos.isEmpty()) {
+                cotEventBuilder.setQos(qos);
             }
 
-            Attribute access = root.attribute("access");
-            if (access != null) {
-                cotEventBuilder.setAccess(access.getText());
+            String access = root.getAttribute("access");
+            if (access != null && !access.isEmpty()) {
+                cotEventBuilder.setAccess(access);
             }
 
             //
             // point
             //
-            Element point = root.element("point");
+            Element point = getElement(root, "point");
             if (point == null) {
                 Log.e(TAG, "cot2protoBuf found message without a point!");
             } else {
 
-                Attribute lat = point.attribute("lat");
-                if (lat == null) {
+                String lat = point.getAttribute("lat");
+                if (lat == null || lat.isEmpty()) {
                     Log.e(TAG, "cot2protoBuf failed to find CotEvent.lat!");
                 } else {
-                    cotEventBuilder.setLat(parseDoubleOrDefault(lat.getText(), 0));
+                    cotEventBuilder.setLat(parseDoubleOrDefault(lat, 0));
                 }
 
-                Attribute lon = point.attribute("lon");
-                if (lon == null) {
+                String lon = point.getAttribute("lon");
+                if (lon == null || lon.isEmpty()) {
                     Log.e(TAG, "cot2protoBuf failed to find CotEvent.lon!");
                 } else {
-                    cotEventBuilder.setLon(parseDoubleOrDefault(lon.getText(), 0));
+                    cotEventBuilder.setLon(parseDoubleOrDefault(lon, 0));
                 }
 
-                Attribute hae = point.attribute("hae");
-                if (hae == null) {
+                String hae = point.getAttribute("hae");
+                if (hae == null || hae.isEmpty()) {
                     Log.e(TAG, "cot2protoBuf failed to find CotEvent.hae!");
                 } else {
-                    cotEventBuilder.setHae(parseDoubleOrDefault(hae.getText(), 0));
+                    cotEventBuilder.setHae(parseDoubleOrDefault(hae, 0));
                 }
 
-                Attribute ce = point.attribute("ce");
-                if (ce == null) {
+                String ce = point.getAttribute("ce");
+                if (ce == null || ce.isEmpty()) {
                     Log.e(TAG, "cot2protoBuf failed to find CotEvent.ce!");
                 } else {
-                    cotEventBuilder.setCe(parseDoubleOrDefault(ce.getText(), 999999));
+                    cotEventBuilder.setCe(parseDoubleOrDefault(ce, 999999));
                 }
 
-                Attribute le = point.attribute("le");
-                if (le == null) {
+                String le = point.getAttribute("le");
+                if (le == null || le.isEmpty()) {
                     Log.e(TAG, "cot2protoBuf failed to find CotEvent.le!");
                 } else {
-                    cotEventBuilder.setLe(parseDoubleOrDefault(le.getText(), 999999));
+                    cotEventBuilder.setLe(parseDoubleOrDefault(le, 999999));
                 }
             }
 
             //
             // detail
             //
-            Element detailElement = root.element("detail");
+            Element detailElement = getElement(root, "detail");
             if (detailElement != null) {
-                detailElement = detailElement.createCopy();
+                detailElement = copyElement(document, detailElement);
+
+                printChildNodeNames(detailElement);
+
                 DetailOuterClass.Detail.Builder detailBuilder = DetailOuterClass.Detail.newBuilder();
 
                 //
                 // contact
                 //
-                Element contactElement = detailElement.element(CONTACT);
+                Element contactElement = getElement(detailElement, CONTACT);
                 if (contactElement != null) {
 
-                    Attribute callsign = contactElement.attribute("callsign");
-                    Attribute endpoint = contactElement.attribute("endpoint");
+                    String callsign = contactElement.getAttribute("callsign");
+                    String endpoint = contactElement.getAttribute("endpoint");
 
                     if (callsign != null) {
-                        if ((endpoint == null && contactElement.attributeCount() == 1) ||
-                                (endpoint != null && contactElement.attributeCount() == 2)) {
+                        if ((endpoint == null && contactElement.getAttributes().getLength() == 1) ||
+                                (endpoint != null && contactElement.getAttributes().getLength() == 2)) {
 
                             ContactOuterClass.Contact.Builder contactBuilder = ContactOuterClass.Contact.newBuilder();
-                            contactBuilder.setCallsign(callsign.getText());
+                            contactBuilder.setCallsign(callsign);
 
-                            if (endpoint != null && endpoint.getText().length() > 0) {
-                                contactBuilder.setEndpoint(endpoint.getText());
+                            if (endpoint != null && endpoint.length() > 0) {
+                                contactBuilder.setEndpoint(endpoint);
                             }
 
                             ContactOuterClass.Contact contact = contactBuilder.build();
                             detailBuilder.setContact(contact);
 
-                            detailElement.remove(contactElement);
+                            detailElement.removeChild(contactElement);
                         }
                     }
                 }
@@ -230,131 +229,150 @@ public class ProtoBufUtils {
                 //
                 // group
                 //
-                Element groupElement = detailElement.element(GROUP);
+                Element groupElement = getElement(detailElement, GROUP);
                 if (groupElement != null) {
 
-                    Attribute name = groupElement.attribute("name");
-                    Attribute role = groupElement.attribute("role");
+                    String name = groupElement.getAttribute("name");
+                    String role = groupElement.getAttribute("role");
 
                     if (name != null && role != null
-                            && groupElement.attributeCount() == 2) {
+                            && groupElement.getAttributes().getLength() == 2) {
 
                         GroupOuterClass.Group.Builder groupBuilder = GroupOuterClass.Group.newBuilder();
-                        groupBuilder.setName(name.getText());
-                        groupBuilder.setRole(role.getText());
+                        groupBuilder.setName(name);
+                        groupBuilder.setRole(role);
 
                         GroupOuterClass.Group group = groupBuilder.build();
                         detailBuilder.setGroup(group);
 
-                        detailElement.remove(groupElement);
+                        detailElement.removeChild(groupElement);
                     }
                 }
 
                 //
                 // precision location
                 //
-                Element precisionLocationElement = detailElement.element(PRECISION_LOCATION);
+                Element precisionLocationElement = getElement(detailElement, PRECISION_LOCATION);
                 if (precisionLocationElement != null) {
 
-                    Attribute geopointsrc = precisionLocationElement.attribute("geopointsrc");
-                    Attribute altsrc = precisionLocationElement.attribute("altsrc");
+                    String geopointsrc = precisionLocationElement.getAttribute("geopointsrc");
+                    String altsrc = precisionLocationElement.getAttribute("altsrc");
 
                     if (geopointsrc != null && altsrc != null
-                            && precisionLocationElement.attributeCount() == 2) {
+                            && precisionLocationElement.getAttributes().getLength() == 2) {
 
                         Precisionlocation.PrecisionLocation.Builder precisionLocationBuilder = Precisionlocation.PrecisionLocation.newBuilder();
-                        precisionLocationBuilder.setGeopointsrc(geopointsrc.getText());
-                        precisionLocationBuilder.setAltsrc(altsrc.getText());
+                        precisionLocationBuilder.setGeopointsrc(geopointsrc);
+                        precisionLocationBuilder.setAltsrc(altsrc);
 
                         Precisionlocation.PrecisionLocation precisionLocation = precisionLocationBuilder.build();
                         detailBuilder.setPrecisionLocation(precisionLocation);
 
-                        detailElement.remove(precisionLocationElement);
+                        detailElement.removeChild(precisionLocationElement);
                     }
                 }
 
                 //
                 // status
                 //
-                Element statusElement = detailElement.element(STATUS);
+                Element statusElement = getElement(detailElement, STATUS);
                 if (statusElement != null) {
 
-                    Attribute battery = statusElement.attribute("battery");
+                    String battery = statusElement.getAttribute("battery");
                     if (battery != null
-                            && statusElement.attributeCount() == 1) {
+                            && statusElement.getAttributes().getLength() == 1) {
 
                         StatusOuterClass.Status.Builder statusBuilder = StatusOuterClass.Status.newBuilder();
 
-                        statusBuilder.setBattery(parseIntOrDefault(battery.getText(), 0));
+                        statusBuilder.setBattery(parseIntOrDefault(battery, 0));
 
                         StatusOuterClass.Status status = statusBuilder.build();
                         detailBuilder.setStatus(status);
 
-                        detailElement.remove(statusElement);
+                        detailElement.removeChild(statusElement);
                     }
                 }
 
                 //
                 // takv
                 //
-                Element takvElement = detailElement.element(TAKV);
+                Element takvElement = getElement(detailElement, TAKV);
                 if (takvElement != null) {
 
-                    Attribute device = takvElement.attribute("device");
-                    Attribute platform = takvElement.attribute("platform");
-                    Attribute os = takvElement.attribute("os");
-                    Attribute version = takvElement.attribute("version");
+                    String device = takvElement.getAttribute("device");
+                    String platform = takvElement.getAttribute("platform");
+                    String os = takvElement.getAttribute("os");
+                    String version = takvElement.getAttribute("version");
 
                     if (device != null && platform != null && os != null && version != null
-                            && takvElement.attributeCount() == 4) {
+                            && takvElement.getAttributes().getLength() == 4) {
 
                         TakvOuterClass.Takv.Builder takvBuilder = TakvOuterClass.Takv.newBuilder();
-                        takvBuilder.setDevice(device.getText());
-                        takvBuilder.setPlatform(platform.getText());
-                        takvBuilder.setOs(os.getText());
-                        takvBuilder.setVersion(version.getText());
+                        takvBuilder.setDevice(device);
+                        takvBuilder.setPlatform(platform);
+                        takvBuilder.setOs(os);
+                        takvBuilder.setVersion(version);
 
                         TakvOuterClass.Takv takv = takvBuilder.build();
                         detailBuilder.setTakv(takv);
 
-                        detailElement.remove(takvElement);
+                        detailElement.removeChild(takvElement);
                     }
                 }
 
                 //
                 // track
                 //
-                Element trackElement = detailElement.element(TRACK);
+                Element trackElement = getElement(detailElement, TRACK);
                 if (trackElement != null) {
 
-                    Attribute speed = trackElement.attribute("speed");
-                    Attribute course = trackElement.attribute("course");
+                    String speed = trackElement.getAttribute("speed");
+                    String course = trackElement.getAttribute("course");
 
                     if (speed != null && course != null &&
-                            trackElement.attributeCount() == 2) {
+                            trackElement.getAttributes().getLength() == 2) {
 
                         TrackOuterClass.Track.Builder trackBuilder = TrackOuterClass.Track.newBuilder();
 
-                        trackBuilder.setSpeed(parseDoubleOrDefault(speed.getText(), 0));
+                        trackBuilder.setSpeed(parseDoubleOrDefault(speed, 0));
 
-                        trackBuilder.setCourse(parseDoubleOrDefault(course.getText(), 0));
+                        trackBuilder.setCourse(parseDoubleOrDefault(course, 0));
 
                         TrackOuterClass.Track track = trackBuilder.build();
                         detailBuilder.setTrack(track);
 
-                        detailElement.remove(trackElement);
+                        detailElement.removeChild(trackElement);
                     }
                 }
 
                 //
                 // xmlDetail
                 //
-                if (detailElement.elements().size() != 0) {
+                // Check if there are child elements
+
+                Log.d(TAG, "detailElement children after going through preknown element names");
+                printChildNodeNames(detailElement);
+
+                NodeList childElements = detailElement.getChildNodes();
+                if (childElements.getLength() != 0) {
                     StringBuilder xmlDetail = new StringBuilder();
-                    for (Object subElement : detailElement.elements()) {
-                        xmlDetail.append(((Element)subElement).asXML());
+
+                    // Iterate over child elements and append their XML representation
+                    for (int i = 0; i < childElements.getLength(); i++) {
+                        if (childElements.item(i) instanceof Element) {
+                            Element subElement = (Element) childElements.item(i);
+                            String subElementString = getElementAsString(subElement);
+                            Log.d(TAG, "got subelement string: " + subElementString);
+                            xmlDetail.append(subElementString);
+                        }
                     }
+
+                    Log.d(TAG, "xmlDetail: " + xmlDetail.toString());
+
                     detailBuilder.setXmlDetail(xmlDetail.toString());
+
+                    // Now 'xmlDetail' contains the XML representation of child elements
+                    // Use 'xmlDetail.toString()' as needed
                 }
 
                 DetailOuterClass.Detail detail = detailBuilder.build();
@@ -387,54 +405,62 @@ public class ProtoBufUtils {
 
     public static String proto2cot(Cotevent.CotEvent cotEvent) {
         try {
-            Document document = DocumentHelper.createDocument();
+            // Create a new DocumentBuilderFactory
+            DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+
+            // Create a new DocumentBuilder
+            DocumentBuilder documentBuilder = documentBuilderFactory.newDocumentBuilder();
+
+            // Create a new Document
+            Document document = documentBuilder.newDocument();
 
             //
             // event
             //
-            Element eventElement = document.addElement("event");
-            eventElement.addAttribute("version", "2.0")
-                    .addAttribute("uid", cotEvent.getUid())
-                    .addAttribute("type", cotEvent.getType())
-                    .addAttribute("how", cotEvent.getHow())
-                    .addAttribute("time", DateUtil.toCotTime(cotEvent.getSendTime()))
-                    .addAttribute("start", DateUtil.toCotTime(cotEvent.getStartTime()))
-                    .addAttribute("stale", DateUtil.toCotTime(cotEvent.getStaleTime()));
+            Element eventElement = document.createElement("event");
+            eventElement.setAttribute("version", "2.0");
+            eventElement.setAttribute("uid", cotEvent.getUid());
+            eventElement.setAttribute("type", cotEvent.getType());
+            eventElement.setAttribute("how", cotEvent.getHow());
+            eventElement.setAttribute("time", DateUtil.toCotTime(cotEvent.getSendTime()));
+            eventElement.setAttribute("start", DateUtil.toCotTime(cotEvent.getStartTime()));
+            eventElement.setAttribute("stale", DateUtil.toCotTime(cotEvent.getStaleTime()));
 
             String caveat = cotEvent.getCaveat();
             if (caveat != null && caveat.length() > 0) {
-                eventElement.addAttribute("caveat", caveat);
+                eventElement.setAttribute("caveat", caveat);
             }
 
             String releaseableTo = cotEvent.getReleaseableTo();
             if (releaseableTo != null && releaseableTo.length() > 0) {
-                eventElement.addAttribute("releaseableTo", releaseableTo);
+                eventElement.setAttribute("releaseableTo", releaseableTo);
             }
 
             String opex = cotEvent.getOpex();
             if (opex != null && opex.length() > 0) {
-                eventElement.addAttribute("opex", opex);
+                eventElement.setAttribute("opex", opex);
             }
 
             String qos = cotEvent.getQos();
             if (qos != null && qos.length() > 0) {
-                eventElement.addAttribute("qos", qos);
+                eventElement.setAttribute("qos", qos);
             }
 
             String access = cotEvent.getAccess();
             if (access != null && access.length() > 0) {
-                eventElement.addAttribute("access", access);
+                eventElement.setAttribute("access", access);
             }
 
             //
             // point
             //
-            eventElement.addElement("point")
-                    .addAttribute("lat", Double.toString(cotEvent.getLat()))
-                    .addAttribute("lon", Double.toString(cotEvent.getLon()))
-                    .addAttribute("hae", Double.toString(cotEvent.getHae()))
-                    .addAttribute("ce", Double.toString(cotEvent.getCe()))
-                    .addAttribute("le", Double.toString(cotEvent.getLe()));
+            Element pointElement = document.createElement("point");
+            pointElement.setAttribute("lat", Double.toString(cotEvent.getLat()));
+            pointElement.setAttribute("lon", Double.toString(cotEvent.getLon()));
+            pointElement.setAttribute("hae", Double.toString(cotEvent.getHae()));
+            pointElement.setAttribute("ce", Double.toString(cotEvent.getCe()));
+            pointElement.setAttribute("le", Double.toString(cotEvent.getLe()));
+            eventElement.appendChild(pointElement);
 
             double speed = -1.0;
             double course = -1.0;
@@ -445,19 +471,20 @@ public class ProtoBufUtils {
             //
             DetailOuterClass.Detail detail = cotEvent.getDetail();
             if (detail != null) {
-                Element detailElement = eventElement.addElement("detail");
+                Element detailElement = document.createElement("detail");
 
                 //
                 // contact
                 //
                 if (detail.hasContact()) {
                     ContactOuterClass.Contact contact = detail.getContact();
-                    Element contactElement = detailElement.addElement(CONTACT)
-                            .addAttribute("callsign", contact.getCallsign());
+                    Element contactElement = document.createElement(CONTACT);
+                    contactElement.setAttribute("callsign", contact.getCallsign());
 
                     if (contact.getEndpoint() != null && contact.getEndpoint().length() > 0) {
-                        contactElement.addAttribute("endpoint", contact.getEndpoint());
+                        contactElement.setAttribute("endpoint", contact.getEndpoint());
                     }
+                    detailElement.appendChild(contactElement);
                 }
 
                 //
@@ -465,9 +492,10 @@ public class ProtoBufUtils {
                 //
                 if (detail.hasGroup()) {
                     GroupOuterClass.Group group = detail.getGroup();
-                    detailElement.addElement(GROUP)
-                            .addAttribute("name", group.getName())
-                            .addAttribute("role", group.getRole());
+                    Element groupElement = document.createElement(GROUP);
+                    groupElement.setAttribute("name", group.getName());
+                    groupElement.setAttribute("role", group.getRole());
+                    detailElement.appendChild(groupElement);
                 }
 
                 //
@@ -475,9 +503,10 @@ public class ProtoBufUtils {
                 //
                 if (detail.hasPrecisionLocation()) {
                     Precisionlocation.PrecisionLocation precisionLocation = detail.getPrecisionLocation();
-                    detailElement.addElement(PRECISION_LOCATION)
-                            .addAttribute("geopointsrc", precisionLocation.getGeopointsrc())
-                            .addAttribute("altsrc", precisionLocation.getAltsrc());
+                    Element precisionLocationElement = document.createElement(PRECISION_LOCATION);
+                    precisionLocationElement.setAttribute("geopointsrc", precisionLocation.getGeopointsrc());
+                    precisionLocationElement.setAttribute("altsrc", precisionLocation.getAltsrc());
+                    detailElement.appendChild(precisionLocationElement);
                 }
 
                 //
@@ -486,8 +515,9 @@ public class ProtoBufUtils {
                 if (detail.hasStatus()) {
                     StatusOuterClass.Status status = detail.getStatus();
                     battery = status.getBattery();
-                    detailElement.addElement(STATUS)
-                            .addAttribute("battery", Integer.toString(battery));
+                    Element statusElement = document.createElement(STATUS);
+                    statusElement.setAttribute("battery", Integer.toString(battery));
+                    detailElement.appendChild(statusElement);
                 }
 
                 //
@@ -495,11 +525,12 @@ public class ProtoBufUtils {
                 //
                 if (detail.hasTakv()) {
                     TakvOuterClass.Takv takv = detail.getTakv();
-                    detailElement.addElement(TAKV)
-                            .addAttribute("device", takv.getDevice())
-                            .addAttribute("platform", takv.getPlatform())
-                            .addAttribute("os", takv.getOs())
-                            .addAttribute("version", takv.getVersion());
+                    Element takvElement = document.createElement(TAKV);
+                    takvElement.setAttribute("device", takv.getDevice());
+                    takvElement.setAttribute("platform", takv.getPlatform());
+                    takvElement.setAttribute("os", takv.getOs());
+                    takvElement.setAttribute("version", takv.getVersion());
+                    detailElement.appendChild(takvElement);
                 }
 
                 //
@@ -509,85 +540,139 @@ public class ProtoBufUtils {
                     TrackOuterClass.Track track = detail.getTrack();
                     course = track.getCourse();
                     speed = track.getSpeed();
-                    detailElement.addElement(TRACK)
-                            .addAttribute("speed", Double.toString(speed))
-                            .addAttribute("course", Double.toString(course));
+                    Element trackElement = document.createElement(TRACK);
+                    trackElement.setAttribute("speed", Double.toString(speed));
+                    trackElement.setAttribute("course", Double.toString(course));
+                    detailElement.appendChild(trackElement);
                 }
 
                 //
                 // xmlDetail
                 //
                 String xmlDetail = detail.getXmlDetail();
+                Log.d(TAG, "xmlDetail length: " + xmlDetail.length());
                 if (xmlDetail != null && xmlDetail.length() > 0) {
+
+
                     xmlDetail = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><detail>" + xmlDetail + "</detail>";
-                    Document doc = reader.get().read(new ByteArrayInputStream(xmlDetail.getBytes()));
-                    Element xmlDetailElement = doc.getRootElement();
-                    for (Object subElement : xmlDetailElement.elements()) {
 
-                        String name = ((Element)subElement).getName();
+                    Log.d(TAG, "xmlDetail: " + xmlDetail);
 
-                        // if we see one of the currently defined detail types appear in the xmlDetail section
-                        // then the xmlDetail contents shall override whatever appeared in the proto message.
-                        if (0 == name.compareTo(CONTACT)
-                                || 0 == name.compareTo(GROUP)
-                                || 0 == name.compareTo(PRECISION_LOCATION)
-                                || 0 == name.compareTo(STATUS)
-                                || 0 == name.compareTo(TAKV)
-                                || 0 == name.compareTo(TRACK)) {
-                            Element existing = detailElement.element(name);
+                    Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new ByteArrayInputStream(xmlDetail.getBytes()));
+                    Element xmlDetailElement = doc.getDocumentElement();
+                    NodeList subElements = xmlDetailElement.getChildNodes();
+
+                    for (int i = 0; i < subElements.getLength(); i++) {
+                        Node subNode = subElements.item(i);
+                        if (subNode instanceof Element) {
+                            Element subElement = (Element) subNode;
+                            String name = subElement.getTagName();
+
+                            // if we see one of the currently defined detail types appear in the xmlDetail section
+                            // then the xmlDetail contents shall override whatever appeared in the proto message.
+                            Element existing = getElement(detailElement, name);
                             if (existing != null) {
                                 // go ahead and delete what came from the explicit proto message
-                                detailElement.remove(existing);
+                                detailElement.removeChild(existing);
                             }
-                        }
 
-                        detailElement.add(((Element) subElement).createCopy());
+                            detailElement.appendChild(document.importNode(subElement, true));
+                        }
                     }
                 }
+
+                eventElement.appendChild(detailElement);
             }
+
+            document.appendChild(eventElement);
 
             // Convert Document to String
             return documentToString(document);
 
         } catch (Exception e) {
-            Log.e(TAG,"Exception in proto2cot!", e);
+            Log.e(TAG, "Exception in proto2cot!", e);
             return null;
         }
     }
 
-    private static String documentToString(Document document) {
+    private static Element getElement(Element root, String elementName) {
+        // Assuming 'root' is your root element
+        Element element = null;
+        NodeList elementList = root.getElementsByTagName(elementName);
+
+        if (elementList.getLength() > 0) {
+            // Get the first 'point' element
+            element = (Element) elementList.item(0);
+        }
+
+        return element;
+    }
+
+    private static Element copyElement(Document document, Element sourceElement) {
+        // Create a new element with the same tag name
+        Element newElement = document.createElement(sourceElement.getTagName());
+
+        // Copy attributes
+        NamedNodeMap attributes = sourceElement.getAttributes();
+        for (int i = 0; i < attributes.getLength(); i++) {
+            Node attribute = attributes.item(i);
+            newElement.setAttribute(attribute.getNodeName(), attribute.getNodeValue());
+        }
+
+        // Copy child nodes
+        NodeList childNodes = sourceElement.getChildNodes();
+        for (int i = 0; i < childNodes.getLength(); i++) {
+            Node childNode = childNodes.item(i);
+            Node newNode = childNode.cloneNode(true);
+            newElement.appendChild(newNode);
+        }
+
+        return newElement;
+    }
+
+    private static String getElementAsString(Element element) {
         try {
-            // Create OutputFormat with desired settings (indentation, encoding, etc.)
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
+            // Create a transformer without XML declaration
+            javax.xml.transform.TransformerFactory transformerFactory = javax.xml.transform.TransformerFactory.newInstance();
+            javax.xml.transform.Transformer transformer = transformerFactory.newTransformer();
+            transformer.setOutputProperty(javax.xml.transform.OutputKeys.OMIT_XML_DECLARATION, "yes");
 
-            // Create a StringWriter to write the XML content
-            StringWriter writer = new StringWriter();
-
-            // Create XMLWriter with the specified OutputFormat and StringWriter
-            XMLWriter xmlWriter = new XMLWriter(writer, format);
-
-            // Write the Document content to the StringWriter
-            xmlWriter.write(document);
-
-            // Close the XMLWriter to ensure all data is flushed
-            xmlWriter.close();
-
-            // Return the resulting XML content as a String
+            // Convert the element to its XML representation
+            java.io.StringWriter writer = new java.io.StringWriter();
+            transformer.transform(new javax.xml.transform.dom.DOMSource(element), new javax.xml.transform.stream.StreamResult(writer));
             return writer.toString();
         } catch (Exception e) {
-            // Handle exceptions as needed
             e.printStackTrace();
-            return null;
+            return ""; // Handle the exception appropriately in your code
         }
     }
 
-    private static ThreadLocal<SAXReader> reader =
-            new ThreadLocal<SAXReader>() {
-                @Override
-                public SAXReader initialValue() {
-                    return new SAXReader();
-                }
-            };
+    private static String documentToString(Document document) throws TransformerException {
+        // Create a TransformerFactory
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+
+        // Create a Transformer
+        Transformer transformer = transformerFactory.newTransformer();
+
+        // Transform the Document into a String
+        StringWriter writer = new StringWriter();
+        transformer.transform(new DOMSource(document), new StreamResult(writer));
+
+        return writer.toString();
+    }
+
+    private static void printChildNodeNames(Element e) {
+        NodeList childNodes = e.getChildNodes();
+        // Iterate through child nodes and print their names
+        for (int i = 0; i < childNodes.getLength(); i++) {
+            Node childNode = childNodes.item(i);
+
+            // Check if the node is an element node
+            if (childNode.getNodeType() == Node.ELEMENT_NODE) {
+                // Print the name of the element
+                Log.d(TAG, "Child Node Name: " + childNode.getNodeName());
+            }
+        }
+    }
 
 }
