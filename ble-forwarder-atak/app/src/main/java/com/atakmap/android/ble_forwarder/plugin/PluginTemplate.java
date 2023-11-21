@@ -22,16 +22,13 @@
 
 package com.atakmap.android.ble_forwarder.plugin;
 
-import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_BEGINNING_TAG;
-import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_ENDING_TAG;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_REQUEST_HOW;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_RESPONSE_HOW;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.CONTENT_RESPONSE_START_DELIMITER_STRING;
-import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.COT_DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_AND_CONTENT_BEGINNING_TAGS;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_AND_CONTENT_ENDING_TAGS;
-import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_BEGINNING_TAG;
-import static com.atakmap.android.ble_forwarder.util.CotUtils.DETAIL_ENDING_TAG;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.END_DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_FAKE_COT_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.SYNC_SEARCH_REQUEST_HOW;
@@ -74,7 +71,6 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 
@@ -534,7 +530,7 @@ public class PluginTemplate implements IPlugin,
 
             receivedCot = receivedValueNoStartDelimiter;
 
-            if (receivedCotString.startsWith(START_DELIMITER_STRING) && receivedCotString.endsWith(DELIMITER_STRING)) {
+            if (receivedCotString.startsWith(START_DELIMITER_STRING) && receivedCotString.endsWith(END_DELIMITER_STRING)) {
                 handleFullyReceivedCoT();
             }
 
@@ -547,7 +543,7 @@ public class PluginTemplate implements IPlugin,
 
                 Log.d(TAG, "ReceivedCot so far: " + receivedCotString);
 
-                if (receivedCotString.startsWith(START_DELIMITER_STRING) && receivedCotString.endsWith(DELIMITER_STRING)) {
+                if (receivedCotString.startsWith(START_DELIMITER_STRING) && receivedCotString.endsWith(END_DELIMITER_STRING)) {
                     handleFullyReceivedCoT();
                 }
             }
@@ -558,11 +554,18 @@ public class PluginTemplate implements IPlugin,
     private void handleFullyReceivedCoT() {
         // strip off the end delimiter from the receivedCot byte array
 
-        // Convert DELIMITER_STRING to a byte array
-        byte[] delimiterBytes = DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
+        // Convert END_DELIMITER_STRING to a byte array
+        byte[] delimiterBytes = END_DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
 
-        // Assuming DELIMITER_STRING has a known length
+        // Assuming COT_DELIMITER_STRING has a known length
         int delimiterLength = delimiterBytes.length;
+
+        Log.d(TAG, "Received cot protobuf bytes over BLE of length " + receivedCot.length + START_DELIMITER_STRING.length());
+        if (deviceMode.equals(DEVICE_MODE.CENTRAL_MODE)) {
+            centralLogMessages.add("Received cot protobuf bytes over BLE of length " + (receivedCot.length + START_DELIMITER_STRING.length()));
+        } else {
+            peripheralLogMessages.add("Received cot protobuf bytes over BLE of length " + (receivedCot.length + START_DELIMITER_STRING.length()));
+        }
 
         byte[] strippedReceivedCot = new byte[receivedCot.length - delimiterLength];
         System.arraycopy(receivedCot, 0, strippedReceivedCot, 0, strippedReceivedCot.length);
@@ -583,9 +586,9 @@ public class PluginTemplate implements IPlugin,
 
     private void processReceivedCoT(String cot) {
         if (deviceMode.equals(DEVICE_MODE.CENTRAL_MODE)) {
-            centralLogMessages.add("Received full cot: " + cot);
+            centralLogMessages.add("Received full cot over BLE:\n" + cot);
         } else if (deviceMode.equals(DEVICE_MODE.PERIPHERAL_MODE)) {
-            peripheralLogMessages.add("Received full cot: " + cot);
+            peripheralLogMessages.add("Received full cot over BLE:\n" + cot);
         }
         Log.d(TAG, "Received full cot: " + cot);
 
@@ -599,7 +602,7 @@ public class PluginTemplate implements IPlugin,
                 String currentFilesJsonString = FileManager.getInstance().getJsonStringForCurrentFiles();
                 Log.d(TAG, "Current files json string: " + currentFilesJsonString);
                 String syncSearchResponseCot = SYNC_SEARCH_RESPONSE_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS +
-                        currentFilesJsonString + DETAIL_AND_CONTENT_ENDING_TAGS + DELIMITER_STRING;
+                        currentFilesJsonString + DETAIL_AND_CONTENT_ENDING_TAGS + COT_DELIMITER_STRING;
                 newCotDequeuer.addNewCotToQueue(syncSearchResponseCot);
             } else if (howAndContent.first.equals(SYNC_SEARCH_RESPONSE_HOW)) {
                 if (currentSyncSearchCallback != null) {
@@ -625,7 +628,7 @@ public class PluginTemplate implements IPlugin,
                     String fileBytesStringBase64 = Utils.encodeToBase64(fileBytesStripped);
                     fileNameAndBytes.setFileBytesString(fileBytesStringBase64);
                     String fileNameAndBytesString = gson.toJson(fileNameAndBytes);
-                    newCotDequeuer.addNewCotToQueue(CONTENT_RESPONSE_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS + fileNameAndBytesString + DETAIL_AND_CONTENT_ENDING_TAGS + DELIMITER_STRING);
+                    newCotDequeuer.addNewCotToQueue(CONTENT_RESPONSE_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS + fileNameAndBytesString + DETAIL_AND_CONTENT_ENDING_TAGS + COT_DELIMITER_STRING);
                 } catch (IOException e) {
                     e.printStackTrace();
                     Log.w(TAG, "Failed to read contents of file: " + e.getMessage(), e);
@@ -695,7 +698,7 @@ public class PluginTemplate implements IPlugin,
 
     public static void sendSyncContentRequest(String hash, SyncContentCallback callback) {
         Log.d(TAG, "Sending cot for sync content request over BLE to other device...");
-        newCotDequeuer.addNewCotToQueue(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS + hash + DETAIL_AND_CONTENT_ENDING_TAGS + DELIMITER_STRING);
+        newCotDequeuer.addNewCotToQueue(CotUtils.CONTENT_REQUEST_START_DELIMITER_STRING + DETAIL_AND_CONTENT_BEGINNING_TAGS + hash + DETAIL_AND_CONTENT_ENDING_TAGS + COT_DELIMITER_STRING);
         currentSyncContentCallback = callback;
     }
 

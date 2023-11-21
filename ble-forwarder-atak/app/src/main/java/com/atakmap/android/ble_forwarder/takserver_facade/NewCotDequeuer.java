@@ -21,7 +21,8 @@
 
 package com.atakmap.android.ble_forwarder.takserver_facade;
 
-import static com.atakmap.android.ble_forwarder.util.CotUtils.DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.COT_DELIMITER_STRING;
+import static com.atakmap.android.ble_forwarder.util.CotUtils.END_DELIMITER_STRING;
 import static com.atakmap.android.ble_forwarder.util.CotUtils.START_DELIMITER_STRING;
 
 import com.atakmap.android.ble_forwarder.ble.TAKBLEManager;
@@ -29,7 +30,6 @@ import com.atakmap.android.ble_forwarder.plugin.PluginTemplate;
 import com.atakmap.android.ble_forwarder.proto.ProtoBufUtils;
 import com.atakmap.android.ble_forwarder.proto.generated.Cotevent;
 import com.atakmap.coremap.log.Log;
-import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -102,14 +102,14 @@ public class NewCotDequeuer implements Runnable {
 //                        }
 
                         if (cotEventByteArrayNoDelimiters == null) {
-                            Log.d(TAG, "cot event byte array was null");
-                            peripheralLogMessages.add("cot event byte array was null.");
+                            Log.w(TAG, "cot event byte array was null");
+                            //peripheralLogMessages.add("cot event byte array was null.");
                             continue;
                         }
 
                         // Convert string constants to byte arrays
                         byte[] startDelimiterBytes = START_DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
-                        byte[] delimiterBytes = DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
+                        byte[] delimiterBytes = END_DELIMITER_STRING.getBytes(StandardCharsets.UTF_8);
 
                         // Create a new byte array containing the concatenated data
                         byte[] cotEventByteArray = new byte[startDelimiterBytes.length +
@@ -125,7 +125,9 @@ public class NewCotDequeuer implements Runnable {
                         Log.d(TAG, "Length of cot event string: " + newCot.length());
 
                         if (deviceMode.equals(PluginTemplate.DEVICE_MODE.PERIPHERAL_MODE)) {
-                            peripheralLogMessages.add("Got new cot from local ATAK");
+                            peripheralLogMessages.add("Got new cot from local ATAK.\n" +
+                                    "Size before protobuf serialization: " + newCot.length() + "\n" +
+                                    "Size after protobuf serialization: " + cotEventByteArray.length);
                             Log.d(TAG, "dequeuing new cot: " + newCot);
                             for (int i = 0; i < cotEventByteArray.length; i += blePacketAppDataSize) {
                                 try {
@@ -134,7 +136,7 @@ public class NewCotDequeuer implements Runnable {
                                     // ignore this - if we are getting data that is not the startDelimiterString and receivedCotString is empty,
                                     // then that means we are getting data in the middle of a CoT that we didn't get the start of -
                                     // just ignore all this data
-                                    centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
+                                    //centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
 
                                     Log.e(TAG, "interrupted", e);
                                 }
@@ -147,7 +149,9 @@ public class NewCotDequeuer implements Runnable {
                                 callback.newCotSubstringDequeuedForCentrals(subArray);
                             }
                         } else if (deviceMode.equals(PluginTemplate.DEVICE_MODE.CENTRAL_MODE)) {
-                            peripheralLogMessages.add("Got new cot from local ATAK");
+                            centralLogMessages.add("Got new cot from local ATAK.\n" +
+                                    "Size before protobuf serialization: " + newCot.length() + "\n" +
+                                    "Size after protobuf serialization: " + cotEventByteArray.length);
                             Log.d(TAG, "dequeuing new cot: " + newCot);
                             for (int i = 0; i < cotEventByteArray.length; i += blePacketAppDataSize) {
                                 try {
@@ -156,7 +160,7 @@ public class NewCotDequeuer implements Runnable {
                                     // ignore this - if we are getting data that is not the startDelimiterString and receivedCotString is empty,
                                     // then that means we are getting data in the middle of a CoT that we didn't get the start of -
                                     // just ignore all this data
-                                    centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
+                                    //centralLogMessages.add("Ignoring this value, we didn't get start delimiter yet.");
 
                                     Log.e(TAG, "interrupted", e);
                                 }

@@ -45,9 +45,10 @@ public class CotUtils {
 
     public static final String TAG = CotUtils.class.getSimpleName();
 
-    public static final String START_DELIMITER_STRING = "<?xml version=\"1.0\"";
-    public static final byte[] DELIMITER = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
-    public static final String DELIMITER_STRING = new String(DELIMITER, StandardCharsets.UTF_8);
+    public static final String START_DELIMITER_STRING = "*%^>";
+    public static final String END_DELIMITER_STRING = "#$@&";
+    public static final byte[] COT_DELIMITER = { '<', '/', 'e', 'v', 'e', 'n', 't', '>'};
+    public static final String COT_DELIMITER_STRING = new String(COT_DELIMITER, StandardCharsets.UTF_8);
     public static final String CONTENT_NODE_NAME = "c";
     public static final String CONTENT_BEGINNING_TAG = "<" + CONTENT_NODE_NAME + ">";
     public static final String CONTENT_ENDING_TAG = "</" + CONTENT_NODE_NAME + ">";
@@ -93,7 +94,7 @@ public class CotUtils {
             // 11111111 11111111 11111111 10111110 (-66)
             msgByte = (byte) msgByte;
 
-            if (msgByte == DELIMITER[dlmIndex]) {
+            if (msgByte == COT_DELIMITER[dlmIndex]) {
                 ++dlmIndex;
                 dlmBuf.write(msgByte);
             } else {
@@ -102,7 +103,7 @@ public class CotUtils {
                 msgBuf.write(msgByte);
                 dlmBuf.reset();
             }
-            if (Arrays.equals(dlmBuf.toByteArray(), DELIMITER)) {
+            if (Arrays.equals(dlmBuf.toByteArray(), COT_DELIMITER)) {
                 foundDelimiter = true;
                 msgBuf.write(dlmBuf.toByteArray()); // either dlmBuf or delimiter should be fine here.
                 break;
