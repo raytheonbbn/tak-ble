@@ -400,9 +400,9 @@ public class TAKBLEManager {
             return;
         }
 
-        peripheralLogMessages.add("Updating connected devices with new byte array");
+        peripheralLogMessages.add("Updating connected devices with data of length " + data.length);
         Log.d(TAG, "Updating connected devices with new byte array");
-        peripheralLogMessages.add("Length of new string: " + data.length);
+        //peripheralLogMessages.add("Length of new string: " + data.length);
 
         //Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
         BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
@@ -417,6 +417,8 @@ public class TAKBLEManager {
 
     @SuppressLint("MissingPermission")
     private void sendDataToPeripheral(byte[] data) {
+
+        centralLogMessages.add("Updating peripheral with data of length " + data.length);
 
         BluetoothGattCharacteristic localTimeCharacteristic =
                 mBluetoothGatt.getService(TAKBLEDataTransferProfile.TAK_BLE_DATA_TRANSFER_SERVICE)
@@ -639,9 +641,9 @@ public class TAKBLEManager {
         public void onCharacteristicRead(BluetoothGatt gatt,
                                          BluetoothGattCharacteristic characteristic,
                                          int status) {
-            centralLogMessages.add("onCharacteristicRead with status " + status);
+            //centralLogMessages.add("onCharacteristicRead with status " + status);
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                centralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
+                //centralLogMessages.add("Successfully read from characteristic with uuid " + characteristic.getUuid());
                 byte[] readValue = characteristic.getValue();
                 Log.d(TAG, "read value from characteristic: " + readValue);
                 byte[] truncatedValue = null;
@@ -650,7 +652,7 @@ public class TAKBLEManager {
                 } else {
                     truncatedValue = readValue;
                 }
-                centralLogMessages.add("Got value: " + truncatedValue);
+                //centralLogMessages.add("Got value: " + truncatedValue);
                 Log.d(TAG, "Got value: " + truncatedValue);
                 callbacks.receivedBytesOverBLE(truncatedValue);
             }
